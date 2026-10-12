@@ -1,0 +1,13 @@
+env:
+  contexts:
+    - name: "Module1-Prototype"
+      urls:
+        - "http://127.0.0.1:9090/vulnerabilities/sqli/"
+      includePaths:
+        - "http://127.0.0.1:9090/vulnerabilities/sqli//.*"
+jobs:
+  - type: spider
+  - type: passiveScan-wait
+  - type: activeScan
+    parameters:
+      maxDuration: 5  # Limits active scan to 5 minutes so it doesn't run forever

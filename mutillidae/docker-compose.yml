@@ -1,0 +1,68 @@
+services:
+  database:
+    container_name: mutillidae-database
+    image: docker.io/webpwnized/mutillidae:database
+    platform: linux/amd64
+    restart: unless-stopped
+    networks:
+      - datanet   
+
+  database_admin:
+    container_name: mutillidae-database-admin
+    depends_on:
+      - database
+    image: docker.io/webpwnized/mutillidae:database_admin
+    platform: linux/amd64
+    ports:
+      - "127.0.0.1:8082:80"
+    restart: unless-stopped
+    networks:
+      - datanet   
+
+  www:
+    container_name: mutillidae-www
+    depends_on:
+      - database
+      - directory
+    image: docker.io/webpwnized/mutillidae:www
+    platform: linux/amd64
+    ports:
+      - "127.0.0.1:8081:80"
+      - "127.0.0.1:8443:443"
+    restart: unless-stopped
+    networks:
+      - datanet
+      - ldapnet
+
+  directory:
+    container_name: mutillidae-ldap
+    image: docker.io/webpwnized/mutillidae:ldap
+    platform: linux/amd64
+    volumes:
+      - ldap_data:/var/lib/ldap
+      - ldap_config:/etc/ldap/slapd.d
+    ports:
+      - "127.0.0.1:389:389"
+    restart: unless-stopped
+    networks:
+      - ldapnet
+
+  directory_admin:
+    container_name: mutillidae-ldap-admin
+    depends_on:
+      - directory
+    image: docker.io/webpwnized/mutillidae:ldap_admin
+    platform: linux/amd64
+    ports:
+      - "127.0.0.1:8083:80"
+    restart: unless-stopped
+    networks:
+      - ldapnet
+
+volumes:
+  ldap_data:
+  ldap_config:
+
+networks:
+  datanet:
+  ldapnet:

@@ -1,198 +1,207 @@
+"""CyberSentinel Module 1: authorized DAST and VA orchestration pipeline."""
+
+from __future__ import annotations
+
+import argparse
 import os
+import re
 import sys
-import time
-import requests
+from pathlib import Path
 
-def generate_yaml_plan(target_url: str, output_file: str = "scan_plan.yaml") -> str:
-    """
-    Generates a YAML scan plan configuration for the spider, passiveScan-wait,
-    and activeScan jobs and saves it to the specified file in the same directory.
-    """
-    yaml_content = f"""env:
-  contexts:
-    - name: "Module1-Prototype"
-      urls:
-        - "{target_url}"
-      includePaths:
-        - "{target_url}/.*"
-jobs:
-  - type: spider
-  - type: passiveScan-wait
-  - type: activeScan
-    parameters:
-      maxDuration: 5  # Limits active scan to 5 minutes so it doesn't run forever
-"""
-    # Resolve file path to the directory containing this script
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    file_path = os.path.join(script_dir, output_file)
-
-    with open(file_path, "w", encoding="utf-8") as f:
-        f.write(yaml_content)
-
-    print(f"Scan plan successfully generated and saved to: {file_path}")
-    return file_path
+from discovery import discover_services, route_services
+from exceptions import CyberSentinelError
+from models import ScanSummary, TestRecord
+from normalizer import normalize_zap_alerts
+from storage import DefectDojoStore
+from targeting import display_target, parse_target, require_authorized_target
+from tls_audit import run_tls_audit
+from zap_client import (
+    ZAPClient,
+    generate_yaml_plan,
+    harvest_alerts,
+    poll_plan_progress,
+    trigger_zap_scan,
+    write_zap_plan,
+)
 
 
-def trigger_zap_scan(file_path: str, zap_base_url: str = "http://127.0.0.1:8080"):
-    """
-    Sends an HTTP GET request to the ZAP API to execute the automation plan.
-    Returns the JSON response containing the planId.
-    """
-    zap_url = f"{zap_base_url}/JSON/automation/action/runPlan/"
-    params = {"filePath": file_path}
+def _plan_path(output_directory: Path, target_url: str, multiple_targets: bool) -> Path:
+    """Return an audit-friendly scan plan location without overwriting multi-service plans."""
 
-    try:
-        response = requests.get(zap_url, params=params)
-        response_json = response.json()
-        print(f"ZAP API Response: {response_json}")
-        return response_json
-    except requests.exceptions.RequestException as e:
-        print(f"Error communicating with ZAP API: {e}")
-        return None
+    if not multiple_targets:
+        return output_directory / "scan_plan.yaml"
+    safe_name = re.sub(r"[^A-Za-z0-9_.-]+", "_", target_url)
+    return output_directory / f"scan_plan_{safe_name[:100]}.yaml"
 
 
-def poll_plan_progress(
-    plan_id: str | int,
+def run_scan(
+    target_url: str,
+    *,
+    product_name: str | None = None,
     zap_base_url: str = "http://127.0.0.1:8080",
-    poll_interval: int = 5,
-    timeout: int = 360,
-) -> dict:
+    database_dsn: str | None = None,
+    authorized: bool = False,
+    output_directory: str | Path | None = None,
+    zap_timeout: int = 360,
+    zap_poll_interval: int = 5,
+) -> ScanSummary:
+    """Run the complete Module 1 workflow for one authorized HTTP(S) target.
+
+    The Nmap discovery stage is mandatory. Scanner-specific failures after
+    discovery are captured in the returned summary so independent stages can
+    continue and their evidence can still be persisted.
     """
-    Polls ZAP's planProgress endpoint at regular intervals until the
-    automation plan completes or the timeout is reached. Tracks both
-    spider and active scan progress.
 
-    :param plan_id: The ID of the running automation plan.
-    :param zap_base_url: Base URL of the ZAP API daemon.
-    :param poll_interval: Polling frequency in seconds (default: 5s).
-    :param timeout: Maximum seconds to wait before terminating the polling loop (default: 360s).
-    :return: The final plan progress dictionary from ZAP API.
-    """
-    progress_url = f"{zap_base_url}/JSON/automation/view/planProgress/"
-    spider_scans_url = f"{zap_base_url}/JSON/spider/view/scans/"
-    ascan_scans_url = f"{zap_base_url}/JSON/ascan/view/scans/"
-    stop_url = f"{zap_base_url}/JSON/automation/action/stopPlan/"
+    target = parse_target(target_url)
+    require_authorized_target(target, authorized)
+    summary = ScanSummary(target=target)
+    output_path = Path(output_directory or Path(__file__).resolve().parent).expanduser().resolve()
+    output_path.mkdir(parents=True, exist_ok=True)
 
-    # Record existing scans count before this scan starts to accurately track progress
-    try:
-        initial_spider_count = len(requests.get(spider_scans_url).json().get("scans", []))
-    except Exception:
-        initial_spider_count = 0
+    print(f"[+] Discovering services on {display_target(target)}")
+    services, nmap_raw_output = discover_services(target)
+    summary.services.extend(services)
+    summary.tests.append(TestRecord("Nmap Port Scan", nmap_raw_output))
+    routes = route_services(services)
 
-    try:
-        initial_ascan_count = len(requests.get(ascan_scans_url).json().get("scans", []))
-    except Exception:
-        initial_ascan_count = 0
-
-    start_time = time.time()
-    print(f"\n[+] Monitoring Plan ID: {plan_id} (polling every {poll_interval}s, timeout {timeout}s)...")
-
-    while True:
-        elapsed = time.time() - start_time
-        if elapsed > timeout:
-            print(f"[!] Plan {plan_id} timed out after {int(elapsed)} seconds. Halting plan...")
+    if not routes.web_services:
+        print("[*] Nmap found no in-scope web services; ZAP and SSLyze were skipped.")
+    else:
+        zap_client = ZAPClient(zap_base_url)
+        for service in routes.web_services:
+            service_target = target.with_service(service)
+            plan_path = _plan_path(output_path, service_target.url, len(routes.web_services) > 1)
             try:
-                requests.get(stop_url, params={"planId": plan_id})
-            except requests.exceptions.RequestException as e:
-                print(f"[!] Failed to stop plan {plan_id}: {e}")
-            raise TimeoutError(f"Automation plan {plan_id} exceeded maximum timeout of {timeout} seconds.")
+                print(f"[+] Running ZAP against {display_target(service_target)}")
+                write_zap_plan(service_target, plan_path)
+                zap_metadata, alerts = zap_client.execute(
+                    service_target,
+                    plan_path,
+                    poll_interval=zap_poll_interval,
+                    timeout=zap_timeout,
+                )
+                zap_metadata["plan_path"] = str(plan_path)
+                zap_metadata["alerts"] = alerts
+                summary.tests.append(
+                    TestRecord(
+                        "ZAP Active Scan",
+                        zap_metadata,
+                        tuple(normalize_zap_alerts(alerts)),
+                    )
+                )
+                print(f"[+] ZAP harvested {len(alerts)} alerts from {service_target.url}")
+            except CyberSentinelError as exc:
+                message = f"ZAP failed for {service_target.url}: {exc}"
+                print(f"[!] {message}")
+                summary.errors.append(message)
+                summary.tests.append(TestRecord("ZAP Active Scan", {"target": service_target.url, "error": str(exc)}))
 
+    for service in routes.tls_services:
         try:
-            resp = requests.get(progress_url, params={"planId": plan_id})
-            progress_data = resp.json()
-        except requests.exceptions.RequestException as e:
-            print(f"[!] Warning: Network error communicating with ZAP: {e}")
-            time.sleep(poll_interval)
-            continue
+            print(f"[+] Running SSLyze against {service.host}:{service.port}")
+            tls_output, tls_findings = run_tls_audit(target, service)
+            summary.tests.append(TestRecord("SSLyze TLS Audit", tls_output, tuple(tls_findings)))
+            print(f"[+] SSLyze normalized {len(tls_findings)} TLS findings")
+        except CyberSentinelError as exc:
+            message = f"SSLyze failed for {service.host}:{service.port}: {exc}"
+            print(f"[!] {message}")
+            summary.errors.append(message)
+            summary.tests.append(
+                TestRecord("SSLyze TLS Audit", {"host": service.host, "port": service.port, "error": str(exc)})
+            )
 
-        finished = progress_data.get("finished")
-
-        # Determine Spider progress
-        spider_pct = 0
+    if database_dsn:
+        store = DefectDojoStore(database_dsn)
         try:
-            spiders = requests.get(spider_scans_url).json().get("scans", [])
-            if finished:
-                spider_pct = 100
-            elif len(spiders) > initial_spider_count:
-                spider_pct = int(spiders[-1].get("progress", 0))
-        except Exception:
-            if finished:
-                spider_pct = 100
+            store.ensure_schema()
+            persisted = store.persist_scan(product_name or target.host, target, summary.tests)
+            summary.product_id = persisted["product_id"]
+            summary.engagement_id = persisted["engagement_id"]
+            summary.persisted_findings = persisted["persisted_findings"]
+            summary.duplicate_findings = persisted["duplicate_findings"]
+            print(
+                f"[+] Persisted {summary.persisted_findings} findings "
+                f"({summary.duplicate_findings} duplicate) to engagement {summary.engagement_id}."
+            )
+        finally:
+            store.close()
+    else:
+        print("[*] PostgreSQL persistence skipped; provide --db-dsn or CYBERSENTINEL_DATABASE_URL.")
 
-        # Determine Active Scan progress
-        ascan_pct = 0
+    return summary
+
+
+def _print_summary(summary: ScanSummary) -> None:
+    print("\n=== CyberSentinel Module 1 Summary ===")
+    print(f"Target: {summary.target.url}")
+    print(f"Status: {summary.status}")
+    print(f"Discovered services: {len(summary.services)}")
+    print(f"Normalized findings: {len(summary.findings)}")
+    if summary.engagement_id is not None:
+        print(f"Engagement: {summary.engagement_id}")
+        print(f"Persisted findings: {summary.persisted_findings}")
+        print(f"Duplicates: {summary.duplicate_findings}")
+    for error in summary.errors:
+        print(f"Error: {error}")
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="CyberSentinel Module 1 VA/DAST pipeline")
+    parser.add_argument("target", nargs="?", help="Authorized HTTP(S) target URL")
+    parser.add_argument(
+        "--authorized",
+        action="store_true",
+        help="Attest that you own or have permission to scan a non-local target.",
+    )
+    parser.add_argument("--product-name", help="DefectDojo product name (defaults to target host)")
+    parser.add_argument("--zap-url", default="http://127.0.0.1:8080", help="ZAP daemon base URL")
+    parser.add_argument(
+        "--db-dsn",
+        default=os.environ.get("CYBERSENTINEL_DATABASE_URL"),
+        help="PostgreSQL DSN; defaults to CYBERSENTINEL_DATABASE_URL",
+    )
+    parser.add_argument("--output-dir", default=Path(__file__).resolve().parent, help="Directory for generated ZAP plans")
+    parser.add_argument("--zap-timeout", type=int, default=360, help="ZAP timeout in seconds")
+    parser.add_argument("--zap-poll-interval", type=int, default=5, help="ZAP telemetry interval in seconds")
+    parser.add_argument("--init-db", action="store_true", help="Create or validate the PostgreSQL schema, then exit")
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = _build_parser()
+    args = parser.parse_args(argv)
+    if args.init_db:
+        if not args.db_dsn:
+            parser.error("--init-db requires --db-dsn or CYBERSENTINEL_DATABASE_URL")
+        store = DefectDojoStore(args.db_dsn)
         try:
-            ascans = requests.get(ascan_scans_url).json().get("scans", [])
-            if finished:
-                ascan_pct = 100
-            elif len(ascans) > initial_ascan_count:
-                ascan_pct = int(ascans[-1].get("progress", 0))
-        except Exception:
-            if finished:
-                ascan_pct = 100
-
-        # Check which job is currently executing
-        jobs = progress_data.get("jobs", [])
-        running_jobs = [j.get("type", j.get("name")) for j in jobs if j.get("status") == "running"]
-        current_job = running_jobs[0] if running_jobs else ("completed" if finished else "processing")
-
-        print(
-            f"[Progress] Plan ID: {plan_id} | Elapsed: {int(elapsed)}s | "
-            f"Job: {current_job} | Spider: {spider_pct}% | ActiveScan: {ascan_pct}%"
-        )
-
-        # Check if the automation plan reports completion
-        if finished:
-            print(f"\n[✓] Automation Plan {plan_id} completed successfully at {finished}!")
-            errors = progress_data.get("error", [])
-            if errors:
-                print("[!] Errors encountered during scan:")
-                for err in errors:
-                    print(f"    - {err}")
-
-            info_messages = progress_data.get("info", [])
-            if info_messages:
-                print("[*] Execution Summary:")
-                for msg in info_messages:
-                    print(f"    - {msg}")
-            return progress_data
-
-        time.sleep(poll_interval)
-
-
-def harvest_alerts(target_url: str, zap_base_url: str = "http://127.0.0.1:8080"):
-    """
-    Retrieves and prints the alerts identified by ZAP for the specified target URL.
-    """
-    alerts_url = f"{zap_base_url}/JSON/core/view/alerts/"
-    params = {"baseurl": target_url}
+            store.ensure_schema()
+        finally:
+            store.close()
+        print("[+] PostgreSQL schema is ready.")
+        return 0
+    if not args.target:
+        parser.error("target is required unless --init-db is used")
+    if args.zap_timeout < 1 or args.zap_poll_interval < 1:
+        parser.error("ZAP timeout and poll interval must be positive integers")
 
     try:
-        response = requests.get(alerts_url, params=params)
-        response_json = response.json()
-        alerts = response_json.get("alerts", [])
-
-        print(f"\n[+] Harvesting alerts for {target_url} ({len(alerts)} found)...")
-        for alert in alerts:
-            risk = alert.get("risk", "Unknown")
-            name = alert.get("alert") or alert.get("name", "Unknown Alert")
-            url = alert.get("url", "")
-            print(f"[{risk}] {name} - {url}")
-
-        return alerts
-    except requests.exceptions.RequestException as e:
-        print(f"[!] Error retrieving alerts from ZAP: {e}")
-        return []
+        summary = run_scan(
+            args.target,
+            product_name=args.product_name,
+            zap_base_url=args.zap_url,
+            database_dsn=args.db_dsn,
+            authorized=args.authorized,
+            output_directory=args.output_dir,
+            zap_timeout=args.zap_timeout,
+            zap_poll_interval=args.zap_poll_interval,
+        )
+    except CyberSentinelError as exc:
+        print(f"[!] Scan failed: {exc}", file=sys.stderr)
+        return 2
+    _print_summary(summary)
+    return 1 if summary.errors else 0
 
 
 if __name__ == "__main__":
-    target_url = sys.argv[1] if len(sys.argv) > 1 else "http://testphp.vulnweb.com"
-    plan_path = generate_yaml_plan(target_url)
-    scan_response = trigger_zap_scan(plan_path)
-
-    if scan_response and "planId" in scan_response:
-        plan_id = scan_response["planId"]
-        poll_plan_progress(plan_id, poll_interval=5, timeout=360)
-        harvest_alerts(target_url)
-    else:
-        print("[!] Unable to trigger scan or missing planId in response.")
+    raise SystemExit(main())

@@ -1,0 +1,38 @@
+[
+  {
+    "source": "OWASP ZAP",
+    "title": "SQL Injection - MySQL",
+    "severity": "High",
+    "endpoint_url": "http://127.0.0.1:8081/index.php?page=user-info.php&username=%27&password=pass&user-info-php-submit-button=View+Account+Details",
+    "cwe": 89,
+    "description": "SQL injection may be possible.",
+    "mitigation": "Do not trust client side input, even if there is client side validation in place.\nIn general, type check all data on the server side.\nIf the application uses JDBC, use PreparedStatement or CallableStatement, with parameters passed by '?'\nIf the application uses ASP, use ADO Command Objects with strong type checking and parameterized queries.\nIf database Stored Procedures can be used, use them.\nDo *not* concatenate strings into queries in the stored procedure, or use 'exec', 'exec immediate', or equivalent functionality!\nDo not create dynamic SQL queries using simple string concatenation.\nEscape all data received from the client.\nApply an 'allow list' of allowed characters, or a 'deny list' of disallowed characters in user input.\nApply the principle of least privilege by using the least privileged database user possible.\nIn particular, avoid using the 'sa' or 'db-owner' database users. This does not eliminate SQL injection, but minimizes its impact.\nGrant the minimum database access that is necessary for the application.",
+    "payload": "'",
+    "evidence": "You have an error in your SQL syntax",
+    "metadata": {
+      "plugin_id": "40018",
+      "parameter": "username",
+      "confidence": "Medium",
+      "reference": "https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html",
+      "other_info": null
+    }
+  },
+  {
+    "source": "OWASP ZAP",
+    "title": "SQL Injection - MySQL",
+    "severity": "High",
+    "endpoint_url": "http://127.0.0.1:8081/index.php?page=user-info.php&username=admin&password=%27&user-info-php-submit-button=View+Account+Details",
+    "cwe": 89,
+    "description": "SQL injection may be possible.",
+    "mitigation": "Do not trust client side input, even if there is client side validation in place.\nIn general, type check all data on the server side.\nIf the application uses JDBC, use PreparedStatement or CallableStatement, with parameters passed by '?'\nIf the application uses ASP, use ADO Command Objects with strong type checking and parameterized queries.\nIf database Stored Procedures can be used, use them.\nDo *not* concatenate strings into queries in the stored procedure, or use 'exec', 'exec immediate', or equivalent functionality!\nDo not create dynamic SQL queries using simple string concatenation.\nEscape all data received from the client.\nApply an 'allow list' of allowed characters, or a 'deny list' of disallowed characters in user input.\nApply the principle of least privilege by using the least privileged database user possible.\nIn particular, avoid using the 'sa' or 'db-owner' database users. This does not eliminate SQL injection, but minimizes its impact.\nGrant the minimum database access that is necessary for the application.",
+    "payload": "'",
+    "evidence": "You have an error in your SQL syntax",
+    "metadata": {
+      "plugin_id": "40018",
+      "parameter": "password",
+      "confidence": "Medium",
+      "reference": "https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html",
+      "other_info": null
+    }
+  }
+]

@@ -2,12 +2,61 @@ env:
   contexts:
     - name: "Module1-Prototype"
       urls:
-        - "http://127.0.0.1:5050/employees?q=test"
+        - "http://127.0.0.1:8081/index.php?page=user-info.php"
       includePaths:
-        - "^http://127\\.0\\.0\\.1:5050/employees(?:[/?].*)?$"
+        - "^http://127\\.0\\.0\\.1:8081/index\\.php(?:[/?].*)?$"
+      excludePaths:
+        - "^http://127\\.0\\.0\\.1:8081/.*[?&]do=logout.*$"
+        - "^http://127\\.0\\.0\\.1:8081/.*logout\\.php.*$"
+        - "^http://127\\.0\\.0\\.1:8081/.*[?&]page=logout\\.php.*$"
+        - "^http://127\\.0\\.0\\.1:8081/.*[?&]action=logout.*$"
+        - "^http://127\\.0\\.0\\.1:8081/.*log-out.*$"
+      sessionManagement:
+        method: "cookie"
+      technology:
+        exclude: []
+      requestHeaders:
+        - name: "Cookie"
+          value: "PHPSESSID=29lu1o7t4hnjbeqham0iiovbs6"
+          enabled: true
 jobs:
+  - type: activeScan-policy
+    parameters:
+      name: "CyberSentinel-sqli"
+    policyDefinition:
+      defaultStrength: "medium"
+      defaultThreshold: "off"
+      rules:
+        - id: 40018
+          name: "SQL Injection"
+          threshold: "medium"
+          strength: "medium"
+        - id: 40019
+          name: "SQL Injection - MySQL"
+          threshold: "medium"
+          strength: "medium"
+        - id: 40020
+          name: "SQL Injection - Hypersonic"
+          threshold: "medium"
+          strength: "medium"
+        - id: 40021
+          name: "SQL Injection - Oracle"
+          threshold: "medium"
+          strength: "medium"
+        - id: 40022
+          name: "SQL Injection - PostgreSQL"
+          threshold: "medium"
+          strength: "medium"
+        - id: 40024
+          name: "SQL Injection - SQLite"
+          threshold: "medium"
+          strength: "medium"
   - type: spider
+    parameters:
+      context: "Module1-Prototype"
   - type: passiveScan-wait
   - type: activeScan
     parameters:
-      maxDuration: 5
+      context: "Module1-Prototype"
+      maxScanDuration: 5
+      policy: "CyberSentinel-sqli"

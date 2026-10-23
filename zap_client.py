@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 from pathlib import Path
 from typing import Any
@@ -13,6 +14,40 @@ from exceptions import ScanExecutionError
 from models import Target
 from normalizer import normalize_zap_alerts
 from targeting import parse_target, zap_scope_regex
+
+# ---------------------------------------------------------------------------
+# Scan policy presets
+# ---------------------------------------------------------------------------
+# Each preset maps a human-friendly name to the list of ZAP active-scan rule
+# IDs that should be enabled.  Everything else is disabled via
+# ``defaultThreshold: "off"`` in the generated YAML plan.
+#
+# To add a new preset, append an entry here and it will be available as
+# ``--policy <name>`` on the CLI.
+# ---------------------------------------------------------------------------
+SQLI_RULES: list[dict[str, Any]] = [
+    {"id": 40018, "name": "SQL Injection",                     "threshold": "medium", "strength": "medium"},
+    {"id": 40019, "name": "SQL Injection - MySQL",              "threshold": "medium", "strength": "medium"},
+    {"id": 40020, "name": "SQL Injection - Hypersonic",         "threshold": "medium", "strength": "medium"},
+    {"id": 40021, "name": "SQL Injection - Oracle",             "threshold": "medium", "strength": "medium"},
+    {"id": 40022, "name": "SQL Injection - PostgreSQL",         "threshold": "medium", "strength": "medium"},
+    {"id": 40024, "name": "SQL Injection - SQLite",             "threshold": "medium", "strength": "medium"},
+]
+
+SCAN_POLICIES: dict[str, list[dict[str, Any]]] = {
+    "sqli": SQLI_RULES,
+}
+
+# Regexes that match common logout endpoints.  Added to ``excludePaths``
+# whenever a session cookie is injected so the spider cannot accidentally
+# destroy the pre-authenticated session.
+_LOGOUT_EXCLUDE_PATTERNS: list[str] = [
+    ".*[?&]do=logout.*",
+    ".*logout\\.php.*",
+    ".*[?&]page=logout\\.php.*",
+    ".*[?&]action=logout.*",
+    ".*log-out.*",
+]
 
 
 class ZAPClient:
@@ -56,6 +91,15 @@ class ZAPClient:
         active_scans = self._get("/JSON/ascan/view/scans/").get("scans", [])
         return len(spiders), len(active_scans)
 
+    def spider_results(self) -> list[str]:
+        """Return every URL the spider has discovered so far."""
+
+        payload = self._get("/JSON/spider/view/allUrls/")
+        urls = payload.get("allUrls", payload.get("urls", []))
+        if not isinstance(urls, list):
+            return []
+        return [str(u) for u in urls]
+
     def run_plan(self, file_path: str | Path) -> str:
         payload = self._get(
             "/JSON/automation/action/runPlan/", {"filePath": str(Path(file_path).resolve())}
@@ -78,10 +122,16 @@ class ZAPClient:
         poll_interval: int = 5,
         timeout: int = 360,
     ) -> dict[str, Any]:
-        """Wait for plan completion while reporting spider and active scan state."""
+        """Wait for plan completion while reporting spider and active scan state.
+
+        When the spider finishes and the active scan has not yet started, the
+        spider-discovered URLs are fetched and printed so the operator has full
+        visibility *before* fuzzing begins.
+        """
 
         started_at = time.monotonic()
         initial_spiders, initial_active = initial_counts
+        spider_urls_logged = False
         while True:
             elapsed = int(time.monotonic() - started_at)
             if elapsed > timeout:
@@ -103,6 +153,22 @@ class ZAPClient:
                     # Plan progress is authoritative; transient telemetry failures do not abort it.
                     pass
 
+            # --- Spider URL visibility: log discovered URLs once the spider
+            #     has finished but before the active scan begins. --------
+            if (
+                not spider_urls_logged
+                and spider_percent == 100
+                and active_percent < 100
+            ):
+                spider_urls_logged = True
+                try:
+                    discovered = self.spider_results()
+                    print(f"[+] Spider discovered {len(discovered)} URL(s) before active scan:")
+                    for url in discovered:
+                        print(f"    {url}")
+                except ScanExecutionError:
+                    print("[!] Could not retrieve spider results (non-fatal).")
+
             jobs = progress.get("jobs", [])
             running = [job.get("type", job.get("name", "unknown")) for job in jobs if job.get("status") == "running"]
             current_job = running[0] if running else ("completed" if finished else "processing")
@@ -114,11 +180,14 @@ class ZAPClient:
                 return progress
             time.sleep(poll_interval)
 
-    def alerts(self, target: Target) -> list[dict[str, Any]]:
+    def alerts(self, target: Target, policy: str | None = None) -> list[dict[str, Any]]:
         payload = self._get("/JSON/core/view/alerts/", {"baseurl": target.url_without_query})
         alerts = payload.get("alerts", [])
         if not isinstance(alerts, list):
             raise ScanExecutionError("ZAP returned an invalid alerts payload.")
+        if policy and policy in SCAN_POLICIES:
+            allowed_plugin_ids = {str(r["id"]) for r in SCAN_POLICIES[policy]}
+            alerts = [a for a in alerts if str(a.get("pluginId", "")) in allowed_plugin_ids]
         return alerts
 
     def execute(
@@ -127,6 +196,7 @@ class ZAPClient:
         plan_path: str | Path,
         poll_interval: int = 5,
         timeout: int = 360,
+        policy: str | None = None,
     ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         baseline = self.scan_counts()
         plan_id = self.run_plan(plan_path)
@@ -135,44 +205,148 @@ class ZAPClient:
         except BaseException:
             self.stop_plan(plan_id)
             raise
-        alerts = self.alerts(target)
+        alerts = self.alerts(target, policy=policy)
         return {"plan_id": plan_id, "progress": progress, "alert_count": len(alerts)}, alerts
 
 
-def write_zap_plan(target: Target, output_file: str | Path, max_duration: int = 5) -> Path:
-    """Write a tightly scoped, portable ZAP Automation Framework plan."""
+def write_zap_plan(
+    target: Target,
+    output_file: str | Path,
+    max_duration: int = 5,
+    *,
+    cookie: str | None = None,
+    policy: str | None = None,
+) -> Path:
+    """Write a tightly scoped, portable ZAP Automation Framework plan.
+
+    Parameters
+    ----------
+    target:
+        The parsed scan target.
+    output_file:
+        Destination path for the generated YAML plan.
+    max_duration:
+        Maximum minutes for the active scan phase.
+    cookie:
+        Optional pre-authenticated session cookie string
+        (e.g. ``"PHPSESSID=abc123"``).  When provided the cookie is injected
+        into every ZAP request via ``requestHeaders`` and common logout paths
+        are added to ``excludePaths`` so the spider cannot invalidate the
+        session.
+    policy:
+        Optional named scan policy preset (e.g. ``"sqli"``).  When provided
+        an ``activeScan-policy`` job is emitted that disables all rules and
+        re-enables only the rules in the preset, and the ``activeScan`` job
+        references that policy by name.
+    """
 
     if max_duration < 1:
         raise ValueError("ZAP active scan duration must be at least one minute.")
+    if policy and policy not in SCAN_POLICIES:
+        raise ValueError(
+            f"Unknown scan policy {policy!r}. "
+            f"Available: {', '.join(sorted(SCAN_POLICIES))}."
+        )
+
     path = Path(output_file).expanduser().resolve()
     path.parent.mkdir(parents=True, exist_ok=True)
     target_json = json.dumps(target.url)
     scope_json = json.dumps(zap_scope_regex(target))
-    yaml_content = f'''env:
+
+    # ── Context: excludePaths ──────────────────────────────────────────
+    exclude_block = ""
+    if cookie:
+        lines = ["      excludePaths:"]
+        # Anchor to scheme+authority only (not the path) so the pattern
+        # correctly matches logout links regardless of whether the app
+        # uses path segments or query parameters for routing (Mutillidae
+        # uses ``index.php?do=logout``, not ``/logout.php``).
+        authority = f"{target.scheme}://{target.authority}"
+        for pattern in _LOGOUT_EXCLUDE_PATTERNS:
+            anchored = f"^{re.escape(authority)}/{pattern}$"
+            lines.append(f"        - {json.dumps(anchored)}")
+        exclude_block = "\n" + "\n".join(lines)
+
+    # ── Context: requestHeaders (cookie injection) ─────────────────────
+    headers_block = ""
+    if cookie:
+        headers_block = f"""
+      sessionManagement:
+        method: "cookie"
+      technology:
+        exclude: []
+      requestHeaders:
+        - name: "Cookie"
+          value: {json.dumps(cookie)}
+          enabled: true"""
+
+    # ── Jobs ───────────────────────────────────────────────────────────
+    jobs_lines: list[str] = ["jobs:"]
+
+    # 1. Optional scan policy that disables everything, then selectively
+    #    re-enables only the rules in the chosen preset.
+    policy_name: str | None = None
+    if policy:
+        rules = SCAN_POLICIES[policy]
+        policy_name = f"CyberSentinel-{policy}"
+        jobs_lines.append(f"  - type: activeScan-policy")
+        jobs_lines.append(f"    parameters:")
+        jobs_lines.append(f"      name: {json.dumps(policy_name)}")
+        jobs_lines.append(f"    policyDefinition:")
+        jobs_lines.append(f"      defaultStrength: \"medium\"")
+        jobs_lines.append(f"      defaultThreshold: \"off\"")
+        jobs_lines.append(f"      rules:")
+        for rule in rules:
+            jobs_lines.append(f"        - id: {rule['id']}")
+            jobs_lines.append(f"          name: {json.dumps(rule['name'])}")
+            jobs_lines.append(f"          threshold: {json.dumps(rule['threshold'])}")
+            jobs_lines.append(f"          strength: {json.dumps(rule['strength'])}")
+
+    # 2. Spider
+    jobs_lines.append("  - type: spider")
+    jobs_lines.append("    parameters:")
+    jobs_lines.append("      context: \"Module1-Prototype\"")
+
+    # 3. Passive scan wait
+    jobs_lines.append("  - type: passiveScan-wait")
+
+    # 4. Active scan
+    jobs_lines.append("  - type: activeScan")
+    jobs_lines.append("    parameters:")
+    jobs_lines.append("      context: \"Module1-Prototype\"")
+    jobs_lines.append(f"      maxScanDuration: {max_duration}")
+    if policy_name:
+        jobs_lines.append(f"      policy: {json.dumps(policy_name)}")
+
+    jobs_block = "\n".join(jobs_lines)
+
+    yaml_content = f"""env:
   contexts:
     - name: "Module1-Prototype"
       urls:
         - {target_json}
       includePaths:
-        - {scope_json}
-jobs:
-  - type: spider
-  - type: passiveScan-wait
-  - type: activeScan
-    parameters:
-      maxDuration: {max_duration}
-'''
+        - {scope_json}{exclude_block}{headers_block}
+jobs_placeholder
+""".replace("jobs_placeholder", jobs_block)
+
     path.write_text(yaml_content, encoding="utf-8")
     return path
 
 
 # Compatibility wrappers keep the original prototype's public function names usable.
-def generate_yaml_plan(target_url: str, output_file: str = "scan_plan.yaml") -> str:
+def generate_yaml_plan(
+    target_url: str,
+    output_file: str = "scan_plan.yaml",
+    *,
+    cookie: str | None = None,
+    policy: str | None = None,
+) -> str:
     script_directory = Path(__file__).resolve().parent
     output_path = Path(output_file)
     if not output_path.is_absolute():
         output_path = script_directory / output_path
-    path = write_zap_plan(parse_target(target_url), output_path)
+    path = write_zap_plan(parse_target(target_url), output_path, cookie=cookie, policy=policy)
     print(f"Scan plan successfully generated and saved to: {path}")
     return str(path)
 

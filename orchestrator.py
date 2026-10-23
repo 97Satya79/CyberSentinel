@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import sys
@@ -16,6 +17,7 @@ from storage import DefectDojoStore
 from targeting import display_target, parse_target, require_authorized_target
 from tls_audit import run_tls_audit
 from zap_client import (
+    SCAN_POLICIES,
     ZAPClient,
     generate_yaml_plan,
     harvest_alerts,
@@ -44,6 +46,8 @@ def run_scan(
     output_directory: str | Path | None = None,
     zap_timeout: int = 360,
     zap_poll_interval: int = 5,
+    cookie: str | None = None,
+    policy: str | None = None,
 ) -> ScanSummary:
     """Run the complete Module 1 workflow for one authorized HTTP(S) target.
 
@@ -73,12 +77,13 @@ def run_scan(
             plan_path = _plan_path(output_path, service_target.url, len(routes.web_services) > 1)
             try:
                 print(f"[+] Running ZAP against {display_target(service_target)}")
-                write_zap_plan(service_target, plan_path)
+                write_zap_plan(service_target, plan_path, cookie=cookie, policy=policy)
                 zap_metadata, alerts = zap_client.execute(
                     service_target,
                     plan_path,
                     poll_interval=zap_poll_interval,
                     timeout=zap_timeout,
+                    policy=policy,
                 )
                 zap_metadata["plan_path"] = str(plan_path)
                 zap_metadata["alerts"] = alerts
@@ -110,6 +115,29 @@ def run_scan(
                 TestRecord("SSLyze TLS Audit", {"host": service.host, "port": service.port, "error": str(exc)})
             )
 
+    findings_file = output_path / "findings.json"
+    try:
+        findings_data = [
+            {
+                "source": f.source,
+                "title": f.title,
+                "severity": f.severity,
+                "endpoint_url": f.endpoint_url,
+                "cwe": f.cwe,
+                "description": f.description,
+                "mitigation": f.mitigation,
+                "payload": f.payload,
+                "evidence": f.evidence,
+                "metadata": f.metadata,
+            }
+            for f in summary.findings
+        ]
+        with open(findings_file, "w", encoding="utf-8") as fh:
+            json.dump(findings_data, fh, indent=2)
+        print(f"[+] Saved {len(summary.findings)} findings to {findings_file}")
+    except OSError as exc:
+        print(f"[!] Could not write {findings_file}: {exc}")
+
     if database_dsn:
         store = DefectDojoStore(database_dsn)
         try:
@@ -137,6 +165,24 @@ def _print_summary(summary: ScanSummary) -> None:
     print(f"Status: {summary.status}")
     print(f"Discovered services: {len(summary.services)}")
     print(f"Normalized findings: {len(summary.findings)}")
+    if summary.findings:
+        from collections import Counter
+
+        counts = Counter(f.severity.upper() for f in summary.findings)
+        severity_order = ["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"]
+        breakdown = [f"{s}: {counts[s]}" for s in severity_order if counts.get(s)]
+        if breakdown:
+            print(f"Severity breakdown: {', '.join(breakdown)}")
+
+        unique_findings: dict[tuple[str, str], list[str]] = {}
+        for f in summary.findings:
+            key = (f.severity.upper(), f.title)
+            unique_findings.setdefault(key, []).append(f.endpoint_url)
+
+        print("\nDiscovered Vulnerabilities & Warnings:")
+        for (sev, title), urls in unique_findings.items():
+            print(f"  [{sev}] {title} ({len(urls)} occurrence{'s' if len(urls) > 1 else ''})")
+            print(f"       Example: {urls[0]}")
     if summary.engagement_id is not None:
         print(f"Engagement: {summary.engagement_id}")
         print(f"Persisted findings: {summary.persisted_findings}")
@@ -164,6 +210,25 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--zap-timeout", type=int, default=360, help="ZAP timeout in seconds")
     parser.add_argument("--zap-poll-interval", type=int, default=5, help="ZAP telemetry interval in seconds")
     parser.add_argument("--init-db", action="store_true", help="Create or validate the PostgreSQL schema, then exit")
+    parser.add_argument(
+        "--cookie",
+        default=None,
+        help=(
+            "Pre-authenticated session cookie to inject into every ZAP request "
+            '(e.g. "PHPSESSID=abc123"). Logout links are automatically excluded '
+            "from the spider when this is set."
+        ),
+    )
+    parser.add_argument(
+        "--policy",
+        default=None,
+        choices=sorted(SCAN_POLICIES),
+        help=(
+            "Named active-scan policy preset. Only the rules in the preset are "
+            "enabled; all others are disabled. "
+            f"Available: {', '.join(sorted(SCAN_POLICIES))}."
+        ),
+    )
     return parser
 
 
@@ -195,6 +260,8 @@ def main(argv: list[str] | None = None) -> int:
             output_directory=args.output_dir,
             zap_timeout=args.zap_timeout,
             zap_poll_interval=args.zap_poll_interval,
+            cookie=args.cookie,
+            policy=args.policy,
         )
     except CyberSentinelError as exc:
         print(f"[!] Scan failed: {exc}", file=sys.stderr)

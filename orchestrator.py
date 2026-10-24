@@ -87,14 +87,29 @@ def run_scan(
                 )
                 zap_metadata["plan_path"] = str(plan_path)
                 zap_metadata["alerts"] = alerts
+                normalized = normalize_zap_alerts(alerts)
+                active_findings = [f for f in normalized if f.scan_type == "active"]
+                passive_findings = [f for f in normalized if f.scan_type == "passive"]
+
                 summary.tests.append(
                     TestRecord(
                         "ZAP Active Scan",
                         zap_metadata,
-                        tuple(normalize_zap_alerts(alerts)),
+                        tuple(active_findings),
                     )
                 )
-                print(f"[+] ZAP harvested {len(alerts)} alerts from {service_target.url}")
+                if passive_findings:
+                    summary.tests.append(
+                        TestRecord(
+                            "ZAP Passive Scan",
+                            {"plan_path": str(plan_path), "alert_count": len(passive_findings)},
+                            tuple(passive_findings),
+                        )
+                    )
+                print(
+                    f"[+] ZAP harvested {len(active_findings)} active finding(s) "
+                    f"and {len(passive_findings)} passive warning(s) from {service_target.url}"
+                )
             except CyberSentinelError as exc:
                 message = f"ZAP failed for {service_target.url}: {exc}"
                 print(f"[!] {message}")
@@ -117,11 +132,12 @@ def run_scan(
 
     findings_file = output_path / "findings.json"
     try:
-        findings_data = [
-            {
+        def _finding_dict(f: RawFinding) -> dict[str, Any]:
+            return {
                 "source": f.source,
                 "title": f.title,
                 "severity": f.severity,
+                "scan_type": f.scan_type,
                 "endpoint_url": f.endpoint_url,
                 "cwe": f.cwe,
                 "description": f.description,
@@ -130,11 +146,24 @@ def run_scan(
                 "evidence": f.evidence,
                 "metadata": f.metadata,
             }
-            for f in summary.findings
-        ]
+
+        findings_payload = {
+            "target": target.url,
+            "summary": {
+                "active_count": len(summary.active_findings),
+                "passive_count": len(summary.passive_findings),
+                "total_count": len(summary.findings),
+            },
+            "active_findings": [_finding_dict(f) for f in summary.active_findings],
+            "passive_findings": [_finding_dict(f) for f in summary.passive_findings],
+        }
         with open(findings_file, "w", encoding="utf-8") as fh:
-            json.dump(findings_data, fh, indent=2)
-        print(f"[+] Saved {len(summary.findings)} findings to {findings_file}")
+            json.dump(findings_payload, fh, indent=2)
+        print(
+            f"[+] Saved {len(summary.findings)} findings "
+            f"({len(summary.active_findings)} active, {len(summary.passive_findings)} passive) "
+            f"to {findings_file}"
+        )
     except OSError as exc:
         print(f"[!] Could not write {findings_file}: {exc}")
 
@@ -159,36 +188,52 @@ def run_scan(
     return summary
 
 
+def _print_finding_group(title: str, findings: list[RawFinding]) -> None:
+    if not findings:
+        return
+    from collections import Counter
+
+    counts = Counter(f.severity.upper() for f in findings)
+    severity_order = ["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"]
+    breakdown = [f"{s}: {counts[s]}" for s in severity_order if counts.get(s)]
+    breakdown_str = f" - {', '.join(breakdown)}" if breakdown else ""
+    print(f"\n{title} ({len(findings)} total{breakdown_str}):")
+    print("-" * 65)
+
+    unique: dict[tuple[str, str], list[RawFinding]] = {}
+    for f in findings:
+        key = (f.severity.upper(), f.title)
+        unique.setdefault(key, []).append(f)
+
+    for (sev, f_title), group in unique.items():
+        sample = group[0]
+        extra = f" [Param: {sample.metadata.get('parameter')}]" if sample.metadata.get("parameter") else ""
+        print(f"  [{sev}] {f_title}{extra} ({len(group)} occurrence{'s' if len(group) > 1 else ''})")
+        print(f"       Example: {sample.endpoint_url}")
+        if sample.payload:
+            print(f"       Payload: {sample.payload}")
+
+
 def _print_summary(summary: ScanSummary) -> None:
-    print("\n=== CyberSentinel Module 1 Summary ===")
+    print("\n" + "=" * 25 + " CyberSentinel Scan Summary " + "=" * 25)
     print(f"Target: {summary.target.url}")
     print(f"Status: {summary.status}")
     print(f"Discovered services: {len(summary.services)}")
-    print(f"Normalized findings: {len(summary.findings)}")
-    if summary.findings:
-        from collections import Counter
+    print(
+        f"Findings total: {len(summary.findings)} "
+        f"({len(summary.active_findings)} active, {len(summary.passive_findings)} passive)"
+    )
 
-        counts = Counter(f.severity.upper() for f in summary.findings)
-        severity_order = ["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"]
-        breakdown = [f"{s}: {counts[s]}" for s in severity_order if counts.get(s)]
-        if breakdown:
-            print(f"Severity breakdown: {', '.join(breakdown)}")
+    _print_finding_group("🎯 Targeted Active Scan Findings (Exploits)", summary.active_findings)
+    _print_finding_group("🛡️ Passive Security & Hygiene Warnings (ZAP Background)", summary.passive_findings)
 
-        unique_findings: dict[tuple[str, str], list[str]] = {}
-        for f in summary.findings:
-            key = (f.severity.upper(), f.title)
-            unique_findings.setdefault(key, []).append(f.endpoint_url)
-
-        print("\nDiscovered Vulnerabilities & Warnings:")
-        for (sev, title), urls in unique_findings.items():
-            print(f"  [{sev}] {title} ({len(urls)} occurrence{'s' if len(urls) > 1 else ''})")
-            print(f"       Example: {urls[0]}")
     if summary.engagement_id is not None:
-        print(f"Engagement: {summary.engagement_id}")
+        print(f"\nEngagement: {summary.engagement_id}")
         print(f"Persisted findings: {summary.persisted_findings}")
         print(f"Duplicates: {summary.duplicate_findings}")
     for error in summary.errors:
         print(f"Error: {error}")
+    print("=" * 78)
 
 
 def _build_parser() -> argparse.ArgumentParser:

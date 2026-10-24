@@ -102,6 +102,7 @@ class RawFinding:
     mitigation: str = ""
     payload: str = ""
     evidence: str = ""
+    scan_type: str = "active"
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
@@ -138,6 +139,14 @@ class ScanSummary:
     @property
     def findings(self) -> list[RawFinding]:
         return [finding for test in self.tests for finding in test.findings]
+
+    @property
+    def active_findings(self) -> list[RawFinding]:
+        return [f for f in self.findings if f.scan_type == "active"]
+
+    @property
+    def passive_findings(self) -> list[RawFinding]:
+        return [f for f in self.findings if f.scan_type == "passive"]
 
     @property
     def status(self) -> str:

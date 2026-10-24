@@ -33,11 +33,22 @@ def parse_cwe(value: Any) -> int | None:
     return parsed if parsed > 0 else None
 
 
+def is_active_alert(alert: dict[str, Any]) -> bool:
+    """Determine whether a ZAP alert originates from active fuzzing vs passive inspection."""
+    source_id = str(alert.get("sourceid", "")).strip()
+    if source_id == "1":
+        return True
+    if source_id == "3":
+        return False
+    return bool(alert.get("attack") or alert.get("inputVector"))
+
+
 def normalize_zap_alerts(alerts: list[dict[str, Any]]) -> list[RawFinding]:
     """Map ZAP's alert payload to persistence-ready findings."""
 
     findings: list[RawFinding] = []
     for alert in alerts:
+        scan_type = "active" if is_active_alert(alert) else "passive"
         findings.append(
             RawFinding(
                 source="OWASP ZAP",
@@ -49,12 +60,14 @@ def normalize_zap_alerts(alerts: list[dict[str, Any]]) -> list[RawFinding]:
                 payload=alert.get("attack") or "",
                 endpoint_url=alert.get("url") or "",
                 evidence=alert.get("evidence") or "",
+                scan_type=scan_type,
                 metadata={
                     "plugin_id": alert.get("pluginId"),
                     "parameter": alert.get("param"),
                     "confidence": alert.get("confidence"),
                     "reference": alert.get("reference"),
                     "other_info": alert.get("otherinfo"),
+                    "scan_type": scan_type,
                 },
             )
         )

@@ -24,6 +24,17 @@ class NormalizerTests(unittest.TestCase):
         self.assertEqual(findings[0].severity, "High")
         self.assertEqual(findings[0].cwe, 89)
         self.assertEqual(findings[0].payload, "' OR '1'='1")
+        self.assertEqual(findings[0].scan_type, "active")
+
+    def test_zap_alert_distinguishes_active_and_passive(self):
+        findings = normalize_zap_alerts(
+            [
+                {"name": "SQL Injection", "sourceid": "1", "attack": "'", "risk": "High"},
+                {"name": "Missing Header", "sourceid": "3", "attack": "", "risk": "Low"},
+            ]
+        )
+        self.assertEqual(findings[0].scan_type, "active")
+        self.assertEqual(findings[1].scan_type, "passive")
 
     def test_sslyze_deprecated_protocol_produces_finding(self):
         service = DiscoveredService(

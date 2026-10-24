@@ -1,38 +1,551 @@
-[
-  {
-    "source": "OWASP ZAP",
-    "title": "SQL Injection - MySQL",
-    "severity": "High",
-    "endpoint_url": "http://127.0.0.1:8081/index.php?page=user-info.php&username=%27&password=pass&user-info-php-submit-button=View+Account+Details",
-    "cwe": 89,
-    "description": "SQL injection may be possible.",
-    "mitigation": "Do not trust client side input, even if there is client side validation in place.\nIn general, type check all data on the server side.\nIf the application uses JDBC, use PreparedStatement or CallableStatement, with parameters passed by '?'\nIf the application uses ASP, use ADO Command Objects with strong type checking and parameterized queries.\nIf database Stored Procedures can be used, use them.\nDo *not* concatenate strings into queries in the stored procedure, or use 'exec', 'exec immediate', or equivalent functionality!\nDo not create dynamic SQL queries using simple string concatenation.\nEscape all data received from the client.\nApply an 'allow list' of allowed characters, or a 'deny list' of disallowed characters in user input.\nApply the principle of least privilege by using the least privileged database user possible.\nIn particular, avoid using the 'sa' or 'db-owner' database users. This does not eliminate SQL injection, but minimizes its impact.\nGrant the minimum database access that is necessary for the application.",
-    "payload": "'",
-    "evidence": "You have an error in your SQL syntax",
-    "metadata": {
-      "plugin_id": "40018",
-      "parameter": "username",
-      "confidence": "Medium",
-      "reference": "https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html",
-      "other_info": null
-    }
+{
+  "target": "http://127.0.0.1:5050/employees?q=",
+  "summary": {
+    "active_count": 0,
+    "passive_count": 27,
+    "total_count": 27
   },
-  {
-    "source": "OWASP ZAP",
-    "title": "SQL Injection - MySQL",
-    "severity": "High",
-    "endpoint_url": "http://127.0.0.1:8081/index.php?page=user-info.php&username=admin&password=%27&user-info-php-submit-button=View+Account+Details",
-    "cwe": 89,
-    "description": "SQL injection may be possible.",
-    "mitigation": "Do not trust client side input, even if there is client side validation in place.\nIn general, type check all data on the server side.\nIf the application uses JDBC, use PreparedStatement or CallableStatement, with parameters passed by '?'\nIf the application uses ASP, use ADO Command Objects with strong type checking and parameterized queries.\nIf database Stored Procedures can be used, use them.\nDo *not* concatenate strings into queries in the stored procedure, or use 'exec', 'exec immediate', or equivalent functionality!\nDo not create dynamic SQL queries using simple string concatenation.\nEscape all data received from the client.\nApply an 'allow list' of allowed characters, or a 'deny list' of disallowed characters in user input.\nApply the principle of least privilege by using the least privileged database user possible.\nIn particular, avoid using the 'sa' or 'db-owner' database users. This does not eliminate SQL injection, but minimizes its impact.\nGrant the minimum database access that is necessary for the application.",
-    "payload": "'",
-    "evidence": "You have an error in your SQL syntax",
-    "metadata": {
-      "plugin_id": "40018",
-      "parameter": "password",
-      "confidence": "Medium",
-      "reference": "https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html",
-      "other_info": null
+  "active_findings": [],
+  "passive_findings": [
+    {
+      "source": "OWASP ZAP",
+      "title": "Session Management Response Identified",
+      "severity": "Info",
+      "scan_type": "passive",
+      "endpoint_url": "http://127.0.0.1:5050/employees?q=j",
+      "cwe": null,
+      "description": "The given response has been identified as containing a session management token. The 'Other Info' field contains a set of header tokens that can be used in the Header Based Session Management Method. If the request is in a context which has a Session Management Method set to \"Auto-Detect\" then this rule will change the session management to use the tokens identified.",
+      "mitigation": "This is an informational alert rather than a vulnerability and so there is nothing to fix.",
+      "payload": "",
+      "evidence": "session",
+      "metadata": {
+        "plugin_id": "10112",
+        "parameter": "session",
+        "confidence": "High",
+        "reference": "https://www.zaproxy.org/docs/desktop/addons/authentication-helper/session-mgmt-id/",
+        "other_info": null,
+        "scan_type": "passive"
+      }
+    },
+    {
+      "source": "OWASP ZAP",
+      "title": "Missing Anti-clickjacking Header",
+      "severity": "Medium",
+      "scan_type": "passive",
+      "endpoint_url": "http://127.0.0.1:5050/employees",
+      "cwe": 1021,
+      "description": "The response does not protect against 'ClickJacking' attacks. It should include either Content-Security-Policy with 'frame-ancestors' directive or X-Frame-Options.",
+      "mitigation": "Modern Web browsers support the Content-Security-Policy and X-Frame-Options HTTP headers. Ensure one of them is set on all web pages returned by your site/app.\nIf you expect the page to be framed only by pages on your server (e.g. it's part of a FRAMESET) then you'll want to use SAMEORIGIN, otherwise if you never expect the page to be framed, you should use DENY. Alternatively consider implementing Content Security Policy's \"frame-ancestors\" directive.",
+      "payload": "",
+      "evidence": "",
+      "metadata": {
+        "plugin_id": "10020",
+        "parameter": "x-frame-options",
+        "confidence": "Medium",
+        "reference": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/X-Frame-Options",
+        "other_info": null,
+        "scan_type": "passive"
+      }
+    },
+    {
+      "source": "OWASP ZAP",
+      "title": "Session Management Response Identified",
+      "severity": "Info",
+      "scan_type": "passive",
+      "endpoint_url": "http://127.0.0.1:5050/employees?q=j",
+      "cwe": null,
+      "description": "The given response has been identified as containing a session management token. The 'Other Info' field contains a set of header tokens that can be used in the Header Based Session Management Method. If the request is in a context which has a Session Management Method set to \"Auto-Detect\" then this rule will change the session management to use the tokens identified.",
+      "mitigation": "This is an informational alert rather than a vulnerability and so there is nothing to fix.",
+      "payload": "",
+      "evidence": "session",
+      "metadata": {
+        "plugin_id": "10112",
+        "parameter": "session",
+        "confidence": "Medium",
+        "reference": "https://www.zaproxy.org/docs/desktop/addons/authentication-helper/session-mgmt-id/",
+        "other_info": null,
+        "scan_type": "passive"
+      }
+    },
+    {
+      "source": "OWASP ZAP",
+      "title": "Missing Anti-clickjacking Header",
+      "severity": "Medium",
+      "scan_type": "passive",
+      "endpoint_url": "http://127.0.0.1:5050/employees?q=ZAP",
+      "cwe": 1021,
+      "description": "The response does not protect against 'ClickJacking' attacks. It should include either Content-Security-Policy with 'frame-ancestors' directive or X-Frame-Options.",
+      "mitigation": "Modern Web browsers support the Content-Security-Policy and X-Frame-Options HTTP headers. Ensure one of them is set on all web pages returned by your site/app.\nIf you expect the page to be framed only by pages on your server (e.g. it's part of a FRAMESET) then you'll want to use SAMEORIGIN, otherwise if you never expect the page to be framed, you should use DENY. Alternatively consider implementing Content Security Policy's \"frame-ancestors\" directive.",
+      "payload": "",
+      "evidence": "",
+      "metadata": {
+        "plugin_id": "10020",
+        "parameter": "x-frame-options",
+        "confidence": "Medium",
+        "reference": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/X-Frame-Options",
+        "other_info": null,
+        "scan_type": "passive"
+      }
+    },
+    {
+      "source": "OWASP ZAP",
+      "title": "Content Security Policy (CSP) Header Not Set",
+      "severity": "Medium",
+      "scan_type": "passive",
+      "endpoint_url": "http://127.0.0.1:5050/employees",
+      "cwe": 693,
+      "description": "Content Security Policy (CSP) is an added layer of security that helps to detect and mitigate certain types of attacks, including Cross Site Scripting (XSS) and data injection attacks. These attacks are used for everything from data theft to site defacement or distribution of malware. CSP provides a set of standard HTTP headers that allow website owners to declare approved sources of content that browsers should be allowed to load on that page \u2014 covered types are JavaScript, CSS, HTML frames, fonts, images and embeddable objects such as Java applets, ActiveX, audio and video files.",
+      "mitigation": "Ensure that your web server, application server, load balancer, etc. is configured to set the Content-Security-Policy header.",
+      "payload": "",
+      "evidence": "",
+      "metadata": {
+        "plugin_id": "10038",
+        "parameter": "",
+        "confidence": "High",
+        "reference": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/CSP\nhttps://cheatsheetseries.owasp.org/cheatsheets/Content_Security_Policy_Cheat_Sheet.html\nhttps://www.w3.org/TR/CSP/\nhttps://w3c.github.io/webappsec-csp/\nhttps://web.dev/articles/csp\nhttps://caniuse.com/#feat=contentsecuritypolicy\nhttps://content-security-policy.com/",
+        "other_info": null,
+        "scan_type": "passive"
+      }
+    },
+    {
+      "source": "OWASP ZAP",
+      "title": "Cross-Domain JavaScript Source File Inclusion",
+      "severity": "Low",
+      "scan_type": "passive",
+      "endpoint_url": "http://127.0.0.1:5050/employees",
+      "cwe": 829,
+      "description": "The page includes one or more script files from a third-party domain.",
+      "mitigation": "Ensure JavaScript source files are loaded from only trusted sources, and the sources can't be controlled by end users of the application.",
+      "payload": "",
+      "evidence": "<script src=\"https://cdn.tailwindcss.com\"></script>",
+      "metadata": {
+        "plugin_id": "10017",
+        "parameter": "https://cdn.tailwindcss.com",
+        "confidence": "Medium",
+        "reference": "",
+        "other_info": null,
+        "scan_type": "passive"
+      }
+    },
+    {
+      "source": "OWASP ZAP",
+      "title": "Absence of Anti-CSRF Tokens",
+      "severity": "Medium",
+      "scan_type": "passive",
+      "endpoint_url": "http://127.0.0.1:5050/employees",
+      "cwe": 352,
+      "description": "No Anti-CSRF tokens were found in a HTML submission form.\nA cross-site request forgery is an attack that involves forcing a victim to send an HTTP request to a target destination without their knowledge or intent in order to perform an action as the victim. The underlying cause is application functionality using predictable URL/form actions in a repeatable way. The nature of the attack is that CSRF exploits the trust that a web site has for a user. By contrast, cross-site scripting (XSS) exploits the trust that a user has for a web site. Like XSS, CSRF attacks are not necessarily cross-site, but they can be. Cross-site request forgery is also known as CSRF, XSRF, one-click attack, session riding, confused deputy, and sea surf.\n\nCSRF attacks are effective in a number of situations, including:\n    * The victim has an active session on the target site.\n    * The victim is authenticated via HTTP auth on the target site.\n    * The victim is on the same local network as the target site.\n\nCSRF has primarily been used to perform an action against a target site using the victim's privileges, but recent techniques have been discovered to disclose information by gaining access to the response. The risk of information disclosure is dramatically increased when the target site is vulnerable to XSS, because XSS can be used as a platform for CSRF, allowing the attack to operate within the bounds of the same-origin policy.",
+      "mitigation": "Phase: Architecture and Design\nUse a vetted library or framework that does not allow this weakness to occur or provides constructs that make this weakness easier to avoid.\nFor example, use anti-CSRF packages such as the OWASP CSRFGuard.\n\nPhase: Implementation\nEnsure that your application is free of cross-site scripting issues, because most CSRF defenses can be bypassed using attacker-controlled script.\n\nPhase: Architecture and Design\nGenerate a unique nonce for each form, place the nonce into the form, and verify the nonce upon receipt of the form. Be sure that the nonce is not predictable (CWE-330).\nNote that this can be bypassed using XSS.\n\nIdentify especially dangerous operations. When the user performs a dangerous operation, send a separate confirmation request to ensure that the user intended to perform that operation.\nNote that this can be bypassed using XSS.\n\nUse the ESAPI Session Management control.\nThis control includes a component for CSRF.\n\nDo not use the GET method for any request that triggers a state change.\n\nPhase: Implementation\nCheck the HTTP Referer header to see if the request originated from an expected page. This could break legitimate functionality, because users or proxies may have disabled sending the Referer for privacy reasons.",
+      "payload": "",
+      "evidence": "<form action=\"/reset-db\" method=\"POST\" class=\"inline\" onsubmit=\"return confirm('Reset SQLite database to original clean seed data?');\">",
+      "metadata": {
+        "plugin_id": "10202",
+        "parameter": "",
+        "confidence": "Low",
+        "reference": "https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html\nhttps://cwe.mitre.org/data/definitions/352.html",
+        "other_info": null,
+        "scan_type": "passive"
+      }
+    },
+    {
+      "source": "OWASP ZAP",
+      "title": "Information Disclosure - Suspicious Comments",
+      "severity": "Info",
+      "scan_type": "passive",
+      "endpoint_url": "http://127.0.0.1:5050/employees",
+      "cwe": 615,
+      "description": "The response appears to contain suspicious comments which may help an attacker.",
+      "mitigation": "Remove all comments that return information that may help an attacker and fix any underlying problems they refer to.",
+      "payload": "",
+      "evidence": "Mode Toggle & Reset DB -->",
+      "metadata": {
+        "plugin_id": "10027",
+        "parameter": "",
+        "confidence": "Medium",
+        "reference": "",
+        "other_info": null,
+        "scan_type": "passive"
+      }
+    },
+    {
+      "source": "OWASP ZAP",
+      "title": "Information Disclosure - Suspicious Comments",
+      "severity": "Info",
+      "scan_type": "passive",
+      "endpoint_url": "http://127.0.0.1:5050/employees",
+      "cwe": 615,
+      "description": "The response appears to contain suspicious comments which may help an attacker.",
+      "mitigation": "Remove all comments that return information that may help an attacker and fix any underlying problems they refer to.",
+      "payload": "",
+      "evidence": "<!-- Live SQL Query Inspector HUD (DevS",
+      "metadata": {
+        "plugin_id": "10027",
+        "parameter": "",
+        "confidence": "Medium",
+        "reference": "",
+        "other_info": null,
+        "scan_type": "passive"
+      }
+    },
+    {
+      "source": "OWASP ZAP",
+      "title": "Server Leaks Version Information via \"Server\" HTTP Response Header Field",
+      "severity": "Low",
+      "scan_type": "passive",
+      "endpoint_url": "http://127.0.0.1:5050/employees",
+      "cwe": 497,
+      "description": "The web/application server is leaking version information via the \"Server\" HTTP response header. Access to such information may facilitate attackers identifying other vulnerabilities your web/application server is subject to.",
+      "mitigation": "Ensure that your web server, application server, load balancer, etc. is configured to suppress the \"Server\" header or provide generic details.",
+      "payload": "",
+      "evidence": "Werkzeug/3.1.3 Python/3.13.9",
+      "metadata": {
+        "plugin_id": "10036",
+        "parameter": "",
+        "confidence": "High",
+        "reference": "https://httpd.apache.org/docs/current/mod/core.html#servertokens\nhttps://learn.microsoft.com/en-us/previous-versions/msp-n-p/ff648552(v=pandp.10)\nhttps://www.troyhunt.com/shhh-dont-let-your-response-headers/",
+        "other_info": null,
+        "scan_type": "passive"
+      }
+    },
+    {
+      "source": "OWASP ZAP",
+      "title": "Sub Resource Integrity Attribute Missing",
+      "severity": "Medium",
+      "scan_type": "passive",
+      "endpoint_url": "http://127.0.0.1:5050/employees",
+      "cwe": 345,
+      "description": "The integrity attribute is missing on a script or link tag served by an external server. The integrity tag prevents an attacker who have gained access to this server from injecting a malicious content.",
+      "mitigation": "Provide a valid integrity attribute to the tag.",
+      "payload": "",
+      "evidence": "<script src=\"https://cdn.tailwindcss.com\"></script>",
+      "metadata": {
+        "plugin_id": "90003",
+        "parameter": "",
+        "confidence": "High",
+        "reference": "https://developer.mozilla.org/en-US/docs/Web/Security/Defenses/Subresource_Integrity",
+        "other_info": null,
+        "scan_type": "passive"
+      }
+    },
+    {
+      "source": "OWASP ZAP",
+      "title": "Sub Resource Integrity Attribute Missing",
+      "severity": "Medium",
+      "scan_type": "passive",
+      "endpoint_url": "http://127.0.0.1:5050/employees",
+      "cwe": 345,
+      "description": "The integrity attribute is missing on a script or link tag served by an external server. The integrity tag prevents an attacker who have gained access to this server from injecting a malicious content.",
+      "mitigation": "Provide a valid integrity attribute to the tag.",
+      "payload": "",
+      "evidence": "<link href=\"https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap\" rel=\"stylesheet\">",
+      "metadata": {
+        "plugin_id": "90003",
+        "parameter": "",
+        "confidence": "High",
+        "reference": "https://developer.mozilla.org/en-US/docs/Web/Security/Defenses/Subresource_Integrity",
+        "other_info": null,
+        "scan_type": "passive"
+      }
+    },
+    {
+      "source": "OWASP ZAP",
+      "title": "X-Content-Type-Options Header Missing",
+      "severity": "Low",
+      "scan_type": "passive",
+      "endpoint_url": "http://127.0.0.1:5050/employees",
+      "cwe": 693,
+      "description": "The Anti-MIME-Sniffing header X-Content-Type-Options was not set to 'nosniff'. This allows older versions of Internet Explorer and Chrome to perform MIME-sniffing on the response body, potentially causing the response body to be interpreted and displayed as a content type other than the declared content type. Current (early 2014) and legacy versions of Firefox will use the declared content type (if one is set), rather than performing MIME-sniffing.",
+      "mitigation": "Ensure that the application/web server sets the Content-Type header appropriately, and that it sets the X-Content-Type-Options header to 'nosniff' for all web pages.\nIf possible, ensure that the end user uses a standards-compliant and modern web browser that does not perform MIME-sniffing at all, or that can be directed by the web application/web server to not perform MIME-sniffing.",
+      "payload": "",
+      "evidence": "",
+      "metadata": {
+        "plugin_id": "10021",
+        "parameter": "x-content-type-options",
+        "confidence": "Medium",
+        "reference": "https://learn.microsoft.com/en-us/previous-versions/windows/internet-explorer/ie-developer/compatibility/gg622941(v=vs.85)\nhttps://owasp.org/www-community/Security_Headers",
+        "other_info": null,
+        "scan_type": "passive"
+      }
+    },
+    {
+      "source": "OWASP ZAP",
+      "title": "Content Security Policy (CSP) Header Not Set",
+      "severity": "Medium",
+      "scan_type": "passive",
+      "endpoint_url": "http://127.0.0.1:5050/employees?q=ZAP",
+      "cwe": 693,
+      "description": "Content Security Policy (CSP) is an added layer of security that helps to detect and mitigate certain types of attacks, including Cross Site Scripting (XSS) and data injection attacks. These attacks are used for everything from data theft to site defacement or distribution of malware. CSP provides a set of standard HTTP headers that allow website owners to declare approved sources of content that browsers should be allowed to load on that page \u2014 covered types are JavaScript, CSS, HTML frames, fonts, images and embeddable objects such as Java applets, ActiveX, audio and video files.",
+      "mitigation": "Ensure that your web server, application server, load balancer, etc. is configured to set the Content-Security-Policy header.",
+      "payload": "",
+      "evidence": "",
+      "metadata": {
+        "plugin_id": "10038",
+        "parameter": "",
+        "confidence": "High",
+        "reference": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/CSP\nhttps://cheatsheetseries.owasp.org/cheatsheets/Content_Security_Policy_Cheat_Sheet.html\nhttps://www.w3.org/TR/CSP/\nhttps://w3c.github.io/webappsec-csp/\nhttps://web.dev/articles/csp\nhttps://caniuse.com/#feat=contentsecuritypolicy\nhttps://content-security-policy.com/",
+        "other_info": null,
+        "scan_type": "passive"
+      }
+    },
+    {
+      "source": "OWASP ZAP",
+      "title": "Cross-Domain JavaScript Source File Inclusion",
+      "severity": "Low",
+      "scan_type": "passive",
+      "endpoint_url": "http://127.0.0.1:5050/employees?q=ZAP",
+      "cwe": 829,
+      "description": "The page includes one or more script files from a third-party domain.",
+      "mitigation": "Ensure JavaScript source files are loaded from only trusted sources, and the sources can't be controlled by end users of the application.",
+      "payload": "",
+      "evidence": "<script src=\"https://cdn.tailwindcss.com\"></script>",
+      "metadata": {
+        "plugin_id": "10017",
+        "parameter": "https://cdn.tailwindcss.com",
+        "confidence": "Medium",
+        "reference": "",
+        "other_info": null,
+        "scan_type": "passive"
+      }
+    },
+    {
+      "source": "OWASP ZAP",
+      "title": "Cookie without SameSite Attribute",
+      "severity": "Low",
+      "scan_type": "passive",
+      "endpoint_url": "http://127.0.0.1:5050/employees?q=j",
+      "cwe": 1275,
+      "description": "A cookie has been set without the SameSite attribute, which means that the cookie can be sent as a result of a 'cross-site' request. The SameSite attribute is an effective counter measure to cross-site request forgery, cross-site script inclusion, and timing attacks.",
+      "mitigation": "Ensure that the SameSite attribute is set to either 'lax' or ideally 'strict' for all cookies.",
+      "payload": "",
+      "evidence": "Set-Cookie: session",
+      "metadata": {
+        "plugin_id": "10054",
+        "parameter": "session",
+        "confidence": "Medium",
+        "reference": "https://datatracker.ietf.org/doc/html/draft-ietf-httpbis-cookie-same-site",
+        "other_info": null,
+        "scan_type": "passive"
+      }
+    },
+    {
+      "source": "OWASP ZAP",
+      "title": "Absence of Anti-CSRF Tokens",
+      "severity": "Medium",
+      "scan_type": "passive",
+      "endpoint_url": "http://127.0.0.1:5050/employees?q=ZAP",
+      "cwe": 352,
+      "description": "No Anti-CSRF tokens were found in a HTML submission form.\nA cross-site request forgery is an attack that involves forcing a victim to send an HTTP request to a target destination without their knowledge or intent in order to perform an action as the victim. The underlying cause is application functionality using predictable URL/form actions in a repeatable way. The nature of the attack is that CSRF exploits the trust that a web site has for a user. By contrast, cross-site scripting (XSS) exploits the trust that a user has for a web site. Like XSS, CSRF attacks are not necessarily cross-site, but they can be. Cross-site request forgery is also known as CSRF, XSRF, one-click attack, session riding, confused deputy, and sea surf.\n\nCSRF attacks are effective in a number of situations, including:\n    * The victim has an active session on the target site.\n    * The victim is authenticated via HTTP auth on the target site.\n    * The victim is on the same local network as the target site.\n\nCSRF has primarily been used to perform an action against a target site using the victim's privileges, but recent techniques have been discovered to disclose information by gaining access to the response. The risk of information disclosure is dramatically increased when the target site is vulnerable to XSS, because XSS can be used as a platform for CSRF, allowing the attack to operate within the bounds of the same-origin policy.",
+      "mitigation": "Phase: Architecture and Design\nUse a vetted library or framework that does not allow this weakness to occur or provides constructs that make this weakness easier to avoid.\nFor example, use anti-CSRF packages such as the OWASP CSRFGuard.\n\nPhase: Implementation\nEnsure that your application is free of cross-site scripting issues, because most CSRF defenses can be bypassed using attacker-controlled script.\n\nPhase: Architecture and Design\nGenerate a unique nonce for each form, place the nonce into the form, and verify the nonce upon receipt of the form. Be sure that the nonce is not predictable (CWE-330).\nNote that this can be bypassed using XSS.\n\nIdentify especially dangerous operations. When the user performs a dangerous operation, send a separate confirmation request to ensure that the user intended to perform that operation.\nNote that this can be bypassed using XSS.\n\nUse the ESAPI Session Management control.\nThis control includes a component for CSRF.\n\nDo not use the GET method for any request that triggers a state change.\n\nPhase: Implementation\nCheck the HTTP Referer header to see if the request originated from an expected page. This could break legitimate functionality, because users or proxies may have disabled sending the Referer for privacy reasons.",
+      "payload": "",
+      "evidence": "<form action=\"/reset-db\" method=\"POST\" class=\"inline\" onsubmit=\"return confirm('Reset SQLite database to original clean seed data?');\">",
+      "metadata": {
+        "plugin_id": "10202",
+        "parameter": "",
+        "confidence": "Low",
+        "reference": "https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html\nhttps://cwe.mitre.org/data/definitions/352.html",
+        "other_info": null,
+        "scan_type": "passive"
+      }
+    },
+    {
+      "source": "OWASP ZAP",
+      "title": "Information Disclosure - Suspicious Comments",
+      "severity": "Info",
+      "scan_type": "passive",
+      "endpoint_url": "http://127.0.0.1:5050/employees?q=j",
+      "cwe": 615,
+      "description": "The response appears to contain suspicious comments which may help an attacker.",
+      "mitigation": "Remove all comments that return information that may help an attacker and fix any underlying problems they refer to.",
+      "payload": "",
+      "evidence": "Mode Toggle & Reset DB -->",
+      "metadata": {
+        "plugin_id": "10027",
+        "parameter": "",
+        "confidence": "Medium",
+        "reference": "",
+        "other_info": null,
+        "scan_type": "passive"
+      }
+    },
+    {
+      "source": "OWASP ZAP",
+      "title": "Information Disclosure - Suspicious Comments",
+      "severity": "Info",
+      "scan_type": "passive",
+      "endpoint_url": "http://127.0.0.1:5050/employees?q=j",
+      "cwe": 615,
+      "description": "The response appears to contain suspicious comments which may help an attacker.",
+      "mitigation": "Remove all comments that return information that may help an attacker and fix any underlying problems they refer to.",
+      "payload": "",
+      "evidence": "<!-- Live SQL Query Inspector HUD (DevS",
+      "metadata": {
+        "plugin_id": "10027",
+        "parameter": "",
+        "confidence": "Medium",
+        "reference": "",
+        "other_info": null,
+        "scan_type": "passive"
+      }
+    },
+    {
+      "source": "OWASP ZAP",
+      "title": "Server Leaks Version Information via \"Server\" HTTP Response Header Field",
+      "severity": "Low",
+      "scan_type": "passive",
+      "endpoint_url": "http://127.0.0.1:5050/employees?q=j",
+      "cwe": 497,
+      "description": "The web/application server is leaking version information via the \"Server\" HTTP response header. Access to such information may facilitate attackers identifying other vulnerabilities your web/application server is subject to.",
+      "mitigation": "Ensure that your web server, application server, load balancer, etc. is configured to suppress the \"Server\" header or provide generic details.",
+      "payload": "",
+      "evidence": "Werkzeug/3.1.3 Python/3.13.9",
+      "metadata": {
+        "plugin_id": "10036",
+        "parameter": "",
+        "confidence": "High",
+        "reference": "https://httpd.apache.org/docs/current/mod/core.html#servertokens\nhttps://learn.microsoft.com/en-us/previous-versions/msp-n-p/ff648552(v=pandp.10)\nhttps://www.troyhunt.com/shhh-dont-let-your-response-headers/",
+        "other_info": null,
+        "scan_type": "passive"
+      }
+    },
+    {
+      "source": "OWASP ZAP",
+      "title": "Sub Resource Integrity Attribute Missing",
+      "severity": "Medium",
+      "scan_type": "passive",
+      "endpoint_url": "http://127.0.0.1:5050/employees?q=j",
+      "cwe": 345,
+      "description": "The integrity attribute is missing on a script or link tag served by an external server. The integrity tag prevents an attacker who have gained access to this server from injecting a malicious content.",
+      "mitigation": "Provide a valid integrity attribute to the tag.",
+      "payload": "",
+      "evidence": "<script src=\"https://cdn.tailwindcss.com\"></script>",
+      "metadata": {
+        "plugin_id": "90003",
+        "parameter": "",
+        "confidence": "High",
+        "reference": "https://developer.mozilla.org/en-US/docs/Web/Security/Defenses/Subresource_Integrity",
+        "other_info": null,
+        "scan_type": "passive"
+      }
+    },
+    {
+      "source": "OWASP ZAP",
+      "title": "Sub Resource Integrity Attribute Missing",
+      "severity": "Medium",
+      "scan_type": "passive",
+      "endpoint_url": "http://127.0.0.1:5050/employees?q=j",
+      "cwe": 345,
+      "description": "The integrity attribute is missing on a script or link tag served by an external server. The integrity tag prevents an attacker who have gained access to this server from injecting a malicious content.",
+      "mitigation": "Provide a valid integrity attribute to the tag.",
+      "payload": "",
+      "evidence": "<link href=\"https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap\" rel=\"stylesheet\">",
+      "metadata": {
+        "plugin_id": "90003",
+        "parameter": "",
+        "confidence": "High",
+        "reference": "https://developer.mozilla.org/en-US/docs/Web/Security/Defenses/Subresource_Integrity",
+        "other_info": null,
+        "scan_type": "passive"
+      }
+    },
+    {
+      "source": "OWASP ZAP",
+      "title": "X-Content-Type-Options Header Missing",
+      "severity": "Low",
+      "scan_type": "passive",
+      "endpoint_url": "http://127.0.0.1:5050/employees?q=j",
+      "cwe": 693,
+      "description": "The Anti-MIME-Sniffing header X-Content-Type-Options was not set to 'nosniff'. This allows older versions of Internet Explorer and Chrome to perform MIME-sniffing on the response body, potentially causing the response body to be interpreted and displayed as a content type other than the declared content type. Current (early 2014) and legacy versions of Firefox will use the declared content type (if one is set), rather than performing MIME-sniffing.",
+      "mitigation": "Ensure that the application/web server sets the Content-Type header appropriately, and that it sets the X-Content-Type-Options header to 'nosniff' for all web pages.\nIf possible, ensure that the end user uses a standards-compliant and modern web browser that does not perform MIME-sniffing at all, or that can be directed by the web application/web server to not perform MIME-sniffing.",
+      "payload": "",
+      "evidence": "",
+      "metadata": {
+        "plugin_id": "10021",
+        "parameter": "x-content-type-options",
+        "confidence": "Medium",
+        "reference": "https://learn.microsoft.com/en-us/previous-versions/windows/internet-explorer/ie-developer/compatibility/gg622941(v=vs.85)\nhttps://owasp.org/www-community/Security_Headers",
+        "other_info": null,
+        "scan_type": "passive"
+      }
+    },
+    {
+      "source": "OWASP ZAP",
+      "title": "User Controllable HTML Element Attribute (Potential XSS)",
+      "severity": "Info",
+      "scan_type": "passive",
+      "endpoint_url": "http://127.0.0.1:5050/employees?q=ZAP",
+      "cwe": 20,
+      "description": "This check looks at user-supplied input in query string parameters and POST data to identify where certain HTML attribute values might be controlled. This provides hot-spot detection for XSS (cross-site scripting) that will require further review by a security analyst to determine exploitability.",
+      "mitigation": "Validate all input and sanitize output it before writing to any HTML attributes.",
+      "payload": "",
+      "evidence": "",
+      "metadata": {
+        "plugin_id": "10031",
+        "parameter": "q",
+        "confidence": "Low",
+        "reference": "https://cheatsheetseries.owasp.org/cheatsheets/Input_Validation_Cheat_Sheet.html",
+        "other_info": null,
+        "scan_type": "passive"
+      }
+    },
+    {
+      "source": "OWASP ZAP",
+      "title": "Session Management Response Identified",
+      "severity": "Info",
+      "scan_type": "passive",
+      "endpoint_url": "http://127.0.0.1:5050/employees",
+      "cwe": null,
+      "description": "The given response has been identified as containing a session management token. The 'Other Info' field contains a set of header tokens that can be used in the Header Based Session Management Method. If the request is in a context which has a Session Management Method set to \"Auto-Detect\" then this rule will change the session management to use the tokens identified.",
+      "mitigation": "This is an informational alert rather than a vulnerability and so there is nothing to fix.",
+      "payload": "",
+      "evidence": "session",
+      "metadata": {
+        "plugin_id": "10112",
+        "parameter": "session",
+        "confidence": "Medium",
+        "reference": "https://www.zaproxy.org/docs/desktop/addons/authentication-helper/session-mgmt-id/",
+        "other_info": null,
+        "scan_type": "passive"
+      }
+    },
+    {
+      "source": "OWASP ZAP",
+      "title": "Session Management Response Identified",
+      "severity": "Info",
+      "scan_type": "passive",
+      "endpoint_url": "http://127.0.0.1:5050/employees",
+      "cwe": null,
+      "description": "The given response has been identified as containing a session management token. The 'Other Info' field contains a set of header tokens that can be used in the Header Based Session Management Method. If the request is in a context which has a Session Management Method set to \"Auto-Detect\" then this rule will change the session management to use the tokens identified.",
+      "mitigation": "This is an informational alert rather than a vulnerability and so there is nothing to fix.",
+      "payload": "",
+      "evidence": "session",
+      "metadata": {
+        "plugin_id": "10112",
+        "parameter": "session",
+        "confidence": "High",
+        "reference": "https://www.zaproxy.org/docs/desktop/addons/authentication-helper/session-mgmt-id/",
+        "other_info": null,
+        "scan_type": "passive"
+      }
+    },
+    {
+      "source": "OWASP ZAP",
+      "title": "Cookie without SameSite Attribute",
+      "severity": "Low",
+      "scan_type": "passive",
+      "endpoint_url": "http://127.0.0.1:5050/employees",
+      "cwe": 1275,
+      "description": "A cookie has been set without the SameSite attribute, which means that the cookie can be sent as a result of a 'cross-site' request. The SameSite attribute is an effective counter measure to cross-site request forgery, cross-site script inclusion, and timing attacks.",
+      "mitigation": "Ensure that the SameSite attribute is set to either 'lax' or ideally 'strict' for all cookies.",
+      "payload": "",
+      "evidence": "Set-Cookie: session",
+      "metadata": {
+        "plugin_id": "10054",
+        "parameter": "session",
+        "confidence": "Medium",
+        "reference": "https://datatracker.ietf.org/doc/html/draft-ietf-httpbis-cookie-same-site",
+        "other_info": null,
+        "scan_type": "passive"
+      }
     }
-  }
-]
+  ]
+}

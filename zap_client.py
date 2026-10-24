@@ -187,7 +187,16 @@ class ZAPClient:
             raise ScanExecutionError("ZAP returned an invalid alerts payload.")
         if policy and policy in SCAN_POLICIES:
             allowed_plugin_ids = {str(r["id"]) for r in SCAN_POLICIES[policy]}
-            alerts = [a for a in alerts if str(a.get("pluginId", "")) in allowed_plugin_ids]
+            filtered: list[dict[str, Any]] = []
+            for alert in alerts:
+                source_id = str(alert.get("sourceid", "")).strip()
+                is_active = source_id == "1" or bool(alert.get("attack") or alert.get("inputVector"))
+                if is_active:
+                    if str(alert.get("pluginId", "")) in allowed_plugin_ids:
+                        filtered.append(alert)
+                else:
+                    filtered.append(alert)
+            return filtered
         return alerts
 
     def execute(
@@ -282,6 +291,20 @@ def write_zap_plan(
 
     # ── Jobs ───────────────────────────────────────────────────────────
     jobs_lines: list[str] = ["jobs:"]
+
+    # 0. Guaranteed Cookie injection across all jobs (spider, activeScan) via replacer
+    if cookie:
+        authority = f"{target.scheme}://{target.authority}"
+        jobs_lines.append("  - type: replacer")
+        jobs_lines.append("    parameters:")
+        jobs_lines.append("      deleteAllRules: false")
+        jobs_lines.append("    rules:")
+        jobs_lines.append("      - description: \"Inject Session Cookie\"")
+        jobs_lines.append(f"        url: {json.dumps(rf'^{re.escape(authority)}/.*$')}")
+        jobs_lines.append("        matchType: \"req_header\"")
+        jobs_lines.append("        matchString: \"Cookie\"")
+        jobs_lines.append("        matchRegex: false")
+        jobs_lines.append(f"        replacementString: {json.dumps(cookie)}")
 
     # 1. Optional scan policy that disables everything, then selectively
     #    re-enables only the rules in the chosen preset.

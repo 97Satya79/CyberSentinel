@@ -2,23 +2,9 @@ env:
   contexts:
     - name: "Module1-Prototype"
       urls:
-        - "http://127.0.0.1:8081/index.php?page=user-info.php"
+        - "http://127.0.0.1:5050/employees?q="
       includePaths:
-        - "^http://127\\.0\\.0\\.1:8081/index\\.php(?:[/?].*)?$"
-      excludePaths:
-        - "^http://127\\.0\\.0\\.1:8081/.*[?&]do=logout.*$"
-        - "^http://127\\.0\\.0\\.1:8081/.*logout\\.php.*$"
-        - "^http://127\\.0\\.0\\.1:8081/.*[?&]page=logout\\.php.*$"
-        - "^http://127\\.0\\.0\\.1:8081/.*[?&]action=logout.*$"
-        - "^http://127\\.0\\.0\\.1:8081/.*log-out.*$"
-      sessionManagement:
-        method: "cookie"
-      technology:
-        exclude: []
-      requestHeaders:
-        - name: "Cookie"
-          value: "PHPSESSID=29lu1o7t4hnjbeqham0iiovbs6"
-          enabled: true
+        - "^http://127\\.0\\.0\\.1:5050/employees(?:[/?].*)?$"
 jobs:
   - type: activeScan-policy
     parameters:

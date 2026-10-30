@@ -40,6 +40,30 @@ class TargetingTests(unittest.TestCase):
         self.assertIn('"^http://127\\\\.0\\\\.0\\\\.1:5050/vulnerabilities/sqli(?:[/?].*)?$"', plan)
         self.assertNotIn("//.*", plan)
 
+    def test_generated_plan_with_xss_policy(self):
+        target = parse_target("http://127.0.0.1:5050/vulnerabilities/xss_r/")
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            plan_path = write_zap_plan(target, Path(temporary_directory) / "scan_plan.yaml", policy="xss")
+            plan = plan_path.read_text(encoding="utf-8")
+
+        self.assertIn('"CyberSentinel-xss"', plan)
+        self.assertIn("Cross Site Scripting (Reflected)", plan)
+        self.assertIn("Cross Site Scripting (Persistent)", plan)
+        self.assertIn("Cross Site Scripting (DOM Based)", plan)
+        self.assertIn('defaultThreshold: "off"', plan)
+        self.assertIn('policy: "CyberSentinel-xss"', plan)
+
+    def test_generated_plan_with_csrf_policy(self):
+        target = parse_target("http://127.0.0.1:5050/vulnerabilities/csrf/")
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            plan_path = write_zap_plan(target, Path(temporary_directory) / "scan_plan.yaml", policy="csrf")
+            plan = plan_path.read_text(encoding="utf-8")
+
+        self.assertIn('"CyberSentinel-csrf"', plan)
+        self.assertIn("Anti-CSRF Tokens Check", plan)
+        self.assertIn('defaultThreshold: "off"', plan)
+        self.assertIn('policy: "CyberSentinel-csrf"', plan)
+
 
 if __name__ == "__main__":
     unittest.main()

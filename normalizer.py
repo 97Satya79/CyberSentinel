@@ -44,33 +44,49 @@ def is_active_alert(alert: dict[str, Any]) -> bool:
 
 
 def normalize_zap_alerts(alerts: list[dict[str, Any]]) -> list[RawFinding]:
-    """Map ZAP's alert payload to persistence-ready findings."""
+    """Map ZAP's alert payload to persistence-ready findings.
+
+    ZAP can report byte-identical alerts more than once (for example when the
+    spider revisits a URL with reordered parameters), so exact duplicates are
+    collapsed here and every consumer sees one consistent count.
+    """
 
     findings: list[RawFinding] = []
+    seen: set[tuple[Any, ...]] = set()
     for alert in alerts:
         scan_type = "active" if is_active_alert(alert) else "passive"
-        findings.append(
-            RawFinding(
-                source="OWASP ZAP",
-                title=alert.get("alert") or alert.get("name") or "Unnamed ZAP Alert",
-                severity=normalize_severity(alert.get("risk")),
-                cwe=parse_cwe(alert.get("cweid")),
-                description=alert.get("desc") or alert.get("description") or "",
-                mitigation=alert.get("solution") or "",
-                payload=alert.get("attack") or "",
-                endpoint_url=alert.get("url") or "",
-                evidence=alert.get("evidence") or "",
-                scan_type=scan_type,
-                metadata={
-                    "plugin_id": alert.get("pluginId"),
-                    "parameter": alert.get("param"),
-                    "confidence": alert.get("confidence"),
-                    "reference": alert.get("reference"),
-                    "other_info": alert.get("otherinfo"),
-                    "scan_type": scan_type,
-                },
-            )
+        finding = RawFinding(
+            source="OWASP ZAP",
+            title=alert.get("alert") or alert.get("name") or "Unnamed ZAP Alert",
+            severity=normalize_severity(alert.get("risk")),
+            cwe=parse_cwe(alert.get("cweid")),
+            description=alert.get("desc") or alert.get("description") or "",
+            mitigation=alert.get("solution") or "",
+            payload=alert.get("attack") or "",
+            endpoint_url=alert.get("url") or "",
+            evidence=alert.get("evidence") or "",
+            scan_type=scan_type,
+            metadata={
+                "plugin_id": alert.get("pluginId"),
+                "parameter": alert.get("param"),
+                "confidence": alert.get("confidence"),
+                "reference": alert.get("reference"),
+                "other_info": alert.get("otherinfo"),
+                "scan_type": scan_type,
+            },
         )
+        key = (
+            finding.title,
+            finding.endpoint_url,
+            finding.evidence,
+            finding.payload,
+            finding.scan_type,
+            finding.metadata["parameter"],
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        findings.append(finding)
     return findings
 
 

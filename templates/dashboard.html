@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CyberSentinel · Findings Dashboard</title>
+  <link rel="stylesheet" href="/static/dashboard.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">CS</span>
+      <div>
+        <h1>CyberSentinel</h1>
+        <p>Automated DAST orchestration · live findings dashboard</p>
+      </div>
+    </div>
+    <div class="health" id="health">
+      <span class="chip chip-unknown" data-key="zap">ZAP daemon: checking…</span>
+      <span class="chip chip-unknown" data-key="nmap">Nmap: checking…</span>
+    </div>
+  </header>
+
+  <main>
+    <section class="card form-card">
+      <form id="scan-form" autocomplete="off">
+        <div class="field field-url">
+          <label for="target-url">Target URL</label>
+          <input id="target-url" name="target_url" type="text" spellcheck="false" required
+                 placeholder="http://127.0.0.1:4280/vulnerabilities/csrf/?password_new=ss&amp;password_conf=ss&amp;Change=Change">
+        </div>
+        <div class="field field-cookie">
+          <label for="cookie">Session cookie <span class="hint">("Cookie:" prefix optional)</span></label>
+          <textarea id="cookie" name="cookie" rows="2" spellcheck="false"
+                    placeholder="security=low; PHPSESSID=7c4e24996d1d5e554acdd7a21c9108da"></textarea>
+        </div>
+        <div class="field">
+          <label for="policy">Vulnerability scope</label>
+          <select id="policy" name="policy">
+            <option value="all">All enabled rules</option>
+            <option value="sqli">SQL injection</option>
+            <option value="xss">Cross-site scripting</option>
+            <option value="csrf">CSRF token check</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="zap-url">ZAP API</label>
+          <input id="zap-url" name="zap_url" type="text" class="mono-input" value="http://127.0.0.1:8080" spellcheck="false">
+        </div>
+        <div class="field">
+          <label for="zap-timeout">Engine timeout (s)</label>
+          <input id="zap-timeout" name="zap_timeout" type="number" min="30" max="3600" step="30" value="360">
+        </div>
+        <div class="field field-check">
+          <label for="authorized" class="check">
+            <input id="authorized" name="authorized" type="checkbox">
+            <span>I own or am authorised to test this target</span>
+          </label>
+        </div>
+        <div class="actions">
+          <button id="start-btn" type="submit">Start scan</button>
+          <button id="stop-btn" type="button" class="secondary" disabled>Stop</button>
+        </div>
+      </form>
+      <p id="form-error" class="form-error" role="alert" hidden></p>
+    </section>
+
+    <div class="layout">
+      <aside class="column-left">
+        <section class="card">
+          <header class="card-head">
+            <h2>Live progress</h2>
+            <span id="scan-status" class="status status-idle">Idle</span>
+          </header>
+          <div class="scan-meta">
+            <div><span class="meta-label">Scan</span><span id="meta-scan" class="mono">—</span></div>
+            <div><span class="meta-label">Target</span><span id="meta-target" class="mono">—</span></div>
+            <div><span class="meta-label">Elapsed</span><span id="meta-elapsed" class="mono">00:00</span></div>
+          </div>
+          <ol id="stages" class="stages"></ol>
+          <div class="bars">
+            <div class="bar-row">
+              <span class="bar-label">Spider</span>
+              <div class="bar"><div id="bar-spider" class="bar-fill"></div></div>
+              <span id="pct-spider" class="bar-pct mono">0%</span>
+            </div>
+            <div class="bar-row">
+              <span class="bar-label">Active scan</span>
+              <div class="bar"><div id="bar-active" class="bar-fill bar-fill-active"></div></div>
+              <span id="pct-active" class="bar-pct mono">0%</span>
+            </div>
+          </div>
+          <div class="subpanels">
+            <h3>Discovered services <span id="services-count" class="count">0</span></h3>
+            <ul id="services" class="list"></ul>
+          </div>
+          <div class="subpanels">
+            <h3>Crawled URLs <span id="urls-count" class="count">0</span></h3>
+            <ul id="urls" class="list list-scroll"></ul>
+          </div>
+          <div class="subpanels">
+            <h3>Engine log</h3>
+            <div id="log" class="log mono" aria-live="polite"></div>
+          </div>
+        </section>
+
+        <section class="card">
+          <header class="card-head"><h2>Recent scans</h2></header>
+          <ul id="history" class="history"></ul>
+        </section>
+      </aside>
+
+      <section class="card findings-card">
+        <header class="card-head">
+          <h2>Findings</h2>
+          <div class="severity-chips" id="severity-chips"></div>
+        </header>
+        <div class="findings-toolbar">
+          <div class="tabs" id="scan-type-tabs" role="tablist">
+            <button class="tab is-active" data-scan-type="all" type="button">All</button>
+            <button class="tab" data-scan-type="active" type="button">Active exploits</button>
+            <button class="tab" data-scan-type="passive" type="button">Passive warnings</button>
+          </div>
+          <input id="finding-search" type="search" placeholder="Filter by name, URL, or parameter">
+          <label class="sort">Sort
+            <select id="finding-sort">
+              <option value="severity">Severity</option>
+              <option value="title">Name</option>
+              <option value="url">URL</option>
+            </select>
+          </label>
+        </div>
+        <div class="findings-body">
+          <p id="findings-empty" class="empty">
+            No findings yet. Start a scan — results appear here as the engine harvests them.
+          </p>
+          <div id="findings" class="findings"></div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script src="/static/dashboard.js"></script>
+</body>
+</html>

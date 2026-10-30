@@ -6,7 +6,7 @@ import json
 import re
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import requests
 
@@ -34,8 +34,23 @@ SQLI_RULES: list[dict[str, Any]] = [
     {"id": 40024, "name": "SQL Injection - SQLite",             "threshold": "medium", "strength": "medium"},
 ]
 
+XSS_RULES: list[dict[str, Any]] = [
+    {"id": 40012, "name": "Cross Site Scripting (Reflected)",           "threshold": "medium", "strength": "medium"},
+    {"id": 40014, "name": "Cross Site Scripting (Persistent)",          "threshold": "medium", "strength": "medium"},
+    {"id": 40016, "name": "Cross Site Scripting (Persistent) - Prime",  "threshold": "medium", "strength": "medium"},
+    {"id": 40017, "name": "Cross Site Scripting (Persistent) - Spider", "threshold": "medium", "strength": "medium"},
+    {"id": 40026, "name": "Cross Site Scripting (DOM Based)",           "threshold": "medium", "strength": "medium"},
+]
+
+CSRF_RULES: list[dict[str, Any]] = [
+    {"id": 20012, "name": "Anti-CSRF Tokens Check",                     "threshold": "medium", "strength": "medium"},
+]
+
 SCAN_POLICIES: dict[str, list[dict[str, Any]]] = {
     "sqli": SQLI_RULES,
+    "xss": XSS_RULES,
+    "cross-site-scripting": XSS_RULES,
+    "csrf": CSRF_RULES,
 }
 
 # Regexes that match common logout endpoints.  Added to ``excludePaths``
@@ -91,6 +106,14 @@ class ZAPClient:
         active_scans = self._get("/JSON/ascan/view/scans/").get("scans", [])
         return len(spiders), len(active_scans)
 
+    def version(self) -> str | None:
+        """Return the daemon's version, or None when ZAP is unreachable."""
+
+        try:
+            return str(self._get("/JSON/core/view/version/").get("version", "")) or None
+        except ScanExecutionError:
+            return None
+
     def spider_results(self) -> list[str]:
         """Return every URL the spider has discovered so far."""
 
@@ -121,19 +144,45 @@ class ZAPClient:
         initial_counts: tuple[int, int],
         poll_interval: int = 5,
         timeout: int = 360,
+        *,
+        on_progress: Callable[[dict[str, Any]], None] | None = None,
+        on_urls: Callable[[list[str]], None] | None = None,
+        should_stop: Callable[[], bool] | None = None,
     ) -> dict[str, Any]:
         """Wait for plan completion while reporting spider and active scan state.
 
         When the spider finishes and the active scan has not yet started, the
-        spider-discovered URLs are fetched and printed so the operator has full
-        visibility *before* fuzzing begins.
+        spider-discovered URLs are fetched so the operator has full visibility
+        *before* fuzzing begins.  ``on_progress`` receives the same telemetry
+        that is printed, which lets the dashboard render live state.
         """
 
         started_at = time.monotonic()
         initial_spiders, initial_active = initial_counts
         spider_urls_logged = False
+
+        def flush_spider_urls() -> None:
+            """Report the crawled URL set once; the dashboard shows them pre-fuzz."""
+
+            nonlocal spider_urls_logged
+            if spider_urls_logged:
+                return
+            spider_urls_logged = True
+            try:
+                discovered = self.spider_results()
+                print(f"[+] Spider discovered {len(discovered)} URL(s) before active scan:")
+                for url in discovered:
+                    print(f"    {url}")
+                if on_urls is not None:
+                    on_urls(discovered)
+            except ScanExecutionError:
+                print("[!] Could not retrieve spider results (non-fatal).")
+
         while True:
             elapsed = int(time.monotonic() - started_at)
+            if should_stop is not None and should_stop():
+                self.stop_plan(plan_id)
+                raise ScanExecutionError(f"ZAP plan {plan_id} was cancelled by the operator.")
             if elapsed > timeout:
                 self.stop_plan(plan_id)
                 raise ScanExecutionError(f"ZAP plan {plan_id} exceeded the {timeout}s timeout.")
@@ -153,21 +202,10 @@ class ZAPClient:
                     # Plan progress is authoritative; transient telemetry failures do not abort it.
                     pass
 
-            # --- Spider URL visibility: log discovered URLs once the spider
-            #     has finished but before the active scan begins. --------
-            if (
-                not spider_urls_logged
-                and spider_percent == 100
-                and active_percent < 100
-            ):
-                spider_urls_logged = True
-                try:
-                    discovered = self.spider_results()
-                    print(f"[+] Spider discovered {len(discovered)} URL(s) before active scan:")
-                    for url in discovered:
-                        print(f"    {url}")
-                except ScanExecutionError:
-                    print("[!] Could not retrieve spider results (non-fatal).")
+            # --- Spider URL visibility: report the crawl once the spider
+            #     finishes but before the active scan begins. -----------
+            if spider_percent == 100 and active_percent < 100:
+                flush_spider_urls()
 
             jobs = progress.get("jobs", [])
             running = [job.get("type", job.get("name", "unknown")) for job in jobs if job.get("status") == "running"]
@@ -176,7 +214,19 @@ class ZAPClient:
                 f"[ZAP] plan={plan_id} elapsed={elapsed}s job={current_job} "
                 f"spider={spider_percent}% active={active_percent}%"
             )
+            if on_progress is not None:
+                on_progress(
+                    {
+                        "plan_id": plan_id,
+                        "elapsed": elapsed,
+                        "job": current_job,
+                        "spider_percent": spider_percent,
+                        "active_percent": active_percent,
+                        "finished": bool(finished),
+                    }
+                )
             if finished:
+                flush_spider_urls()
                 return progress
             time.sleep(poll_interval)
 
@@ -206,11 +256,23 @@ class ZAPClient:
         poll_interval: int = 5,
         timeout: int = 360,
         policy: str | None = None,
+        *,
+        on_progress: Callable[[dict[str, Any]], None] | None = None,
+        on_urls: Callable[[list[str]], None] | None = None,
+        should_stop: Callable[[], bool] | None = None,
     ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         baseline = self.scan_counts()
         plan_id = self.run_plan(plan_path)
         try:
-            progress = self.poll_plan(plan_id, baseline, poll_interval, timeout)
+            progress = self.poll_plan(
+                plan_id,
+                baseline,
+                poll_interval,
+                timeout,
+                on_progress=on_progress,
+                on_urls=on_urls,
+                should_stop=should_stop,
+            )
         except BaseException:
             self.stop_plan(plan_id)
             raise
@@ -243,7 +305,7 @@ def write_zap_plan(
         are added to ``excludePaths`` so the spider cannot invalidate the
         session.
     policy:
-        Optional named scan policy preset (e.g. ``"sqli"``).  When provided
+        Optional named scan policy preset (e.g. ``"sqli"``, ``"xss"``, ``"csrf"``).  When provided
         an ``activeScan-policy`` job is emitted that disables all rules and
         re-enables only the rules in the preset, and the ``activeScan`` job
         references that policy by name.

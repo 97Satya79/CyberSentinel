@@ -2,3 +2,5 @@ requests>=2.32,<3
 python-nmap>=0.7,<1
 sslyze>=6.3,<7
 psycopg2-binary>=2.9,<3
+fastapi>=0.115,<1
+uvicorn>=0.30,<1

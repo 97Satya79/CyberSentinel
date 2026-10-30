@@ -1,2 +1,7 @@
 __pycache__/
 *.pyc
+scan_results/
+findings.json
+scan_plan.yaml
+.env
+*.log

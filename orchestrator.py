@@ -7,11 +7,13 @@ import json
 import os
 import re
 import sys
+from collections import Counter
 from pathlib import Path
+from typing import Any, Callable
 
 from discovery import discover_services, route_services
 from exceptions import CyberSentinelError
-from models import ScanSummary, TestRecord
+from models import RawFinding, ScanSummary, TestRecord
 from normalizer import normalize_zap_alerts
 from storage import DefectDojoStore
 from targeting import display_target, parse_target, require_authorized_target
@@ -25,6 +27,50 @@ from zap_client import (
     trigger_zap_scan,
     write_zap_plan,
 )
+
+
+class _Reporter:
+    """Mirror pipeline progress to the terminal and, when wired up, to a caller."""
+
+    def __init__(self, emit: Callable[..., None] | None = None) -> None:
+        self._emit = emit
+
+    def print(self, message: str) -> None:
+        print(message)
+        self.log(message)
+
+    def log(self, message: str) -> None:
+        if self._emit is not None:
+            self._emit("log", message=message)
+
+    def stage(self, stage: str, status: str, message: str = "") -> None:
+        if self._emit is not None:
+            self._emit("stage", stage=stage, status=status, message=message)
+
+    def send(self, event_type: str, **data: Any) -> None:
+        if self._emit is not None:
+            self._emit(event_type, **data)
+
+
+def finding_to_dict(finding: RawFinding) -> dict[str, Any]:
+    """Serialise one normalized finding for JSON artifacts and the dashboard."""
+
+    return {
+        "source": finding.source,
+        "title": finding.title,
+        "severity": finding.severity,
+        "scan_type": finding.scan_type,
+        "endpoint_url": finding.endpoint_url,
+        "parameter": finding.metadata.get("parameter") or "",
+        "confidence": finding.metadata.get("confidence") or "",
+        "cwe": finding.cwe,
+        "description": finding.description,
+        "mitigation": finding.mitigation,
+        "payload": finding.payload,
+        "evidence": finding.evidence,
+        "reference": finding.metadata.get("reference") or "",
+        "metadata": finding.metadata,
+    }
 
 
 def _plan_path(output_directory: Path, target_url: str, multiple_targets: bool) -> Path:
@@ -48,42 +94,78 @@ def run_scan(
     zap_poll_interval: int = 5,
     cookie: str | None = None,
     policy: str | None = None,
+    emit: Callable[..., None] | None = None,
+    should_stop: Callable[[], bool] | None = None,
 ) -> ScanSummary:
     """Run the complete Module 1 workflow for one authorized HTTP(S) target.
 
     The Nmap discovery stage is mandatory. Scanner-specific failures after
     discovery are captured in the returned summary so independent stages can
     continue and their evidence can still be persisted.
+
+    ``emit`` receives structured progress events for programmatic consumers such
+    as the dashboard, while terminal output stays available for the CLI.
     """
 
+    report = _Reporter(emit)
     target = parse_target(target_url)
     require_authorized_target(target, authorized)
     summary = ScanSummary(target=target)
     output_path = Path(output_directory or Path(__file__).resolve().parent).expanduser().resolve()
     output_path.mkdir(parents=True, exist_ok=True)
 
-    print(f"[+] Discovering services on {display_target(target)}")
+    report.stage("discovery", "started", f"Discovering services on {display_target(target)}")
+    report.print(f"[+] Discovering services on {display_target(target)}")
     services, nmap_raw_output = discover_services(target)
     summary.services.extend(services)
     summary.tests.append(TestRecord("Nmap Port Scan", nmap_raw_output))
     routes = route_services(services)
+    report.send(
+        "services",
+        services=[
+            {
+                "host": service.host,
+                "port": service.port,
+                "protocol": service.protocol,
+                "state": service.state,
+                "service_name": service.service_name,
+                "product": service.product,
+                "version": service.version,
+                "is_web": service.is_web,
+                "supports_tls": service.supports_tls,
+            }
+            for service in services
+        ],
+    )
+    report.stage(
+        "discovery",
+        "completed",
+        f"Nmap found {len(services)} service(s); {len(routes.web_services)} web, {len(routes.tls_services)} TLS",
+    )
 
     if not routes.web_services:
-        print("[*] Nmap found no in-scope web services; ZAP and SSLyze were skipped.")
+        report.print("[*] Nmap found no in-scope web services; ZAP and SSLyze were skipped.")
     else:
         zap_client = ZAPClient(zap_base_url)
         for service in routes.web_services:
             service_target = target.with_service(service)
             plan_path = _plan_path(output_path, service_target.url, len(routes.web_services) > 1)
             try:
-                print(f"[+] Running ZAP against {display_target(service_target)}")
+                report.print(f"[+] Running ZAP against {display_target(service_target)}")
+                report.stage("zap", "started", f"ZAP active scan against {service_target.url}")
                 write_zap_plan(service_target, plan_path, cookie=cookie, policy=policy)
+                report.send("plan", target=service_target.url, plan_path=str(plan_path), policy=policy or "default")
                 zap_metadata, alerts = zap_client.execute(
                     service_target,
                     plan_path,
                     poll_interval=zap_poll_interval,
                     timeout=zap_timeout,
                     policy=policy,
+                    on_progress=lambda telemetry: report.send(
+                        "progress", engine="zap", target=service_target.url, **telemetry
+                    ),
+                    on_urls=lambda urls: report.send("urls", engine="zap", target=service_target.url, urls=urls),
+                    should_stop=should_stop,
                 )
                 zap_metadata["plan_path"] = str(plan_path)
                 zap_metadata["alerts"] = alerts
@@ -106,47 +188,48 @@ def run_scan(
                             tuple(passive_findings),
                         )
                     )
-                print(
+                for finding in normalized:
+                    report.send("finding", **finding_to_dict(finding))
+                report.stage(
+                    "zap",
+                    "completed",
+                    f"ZAP returned {len(alerts)} alert(s) for {service_target.url}",
+                )
+                report.print(
                     f"[+] ZAP harvested {len(active_findings)} active finding(s) "
                     f"and {len(passive_findings)} passive warning(s) from {service_target.url}"
                 )
             except CyberSentinelError as exc:
                 message = f"ZAP failed for {service_target.url}: {exc}"
-                print(f"[!] {message}")
+                report.print(f"[!] {message}")
+                report.stage("zap", "failed", message)
+                report.send("error", message=message, stage="zap")
                 summary.errors.append(message)
                 summary.tests.append(TestRecord("ZAP Active Scan", {"target": service_target.url, "error": str(exc)}))
 
     for service in routes.tls_services:
         try:
-            print(f"[+] Running SSLyze against {service.host}:{service.port}")
+            report.print(f"[+] Running SSLyze against {service.host}:{service.port}")
+            report.stage("tls", "started", f"SSLyze TLS audit against {service.host}:{service.port}")
             tls_output, tls_findings = run_tls_audit(target, service)
             summary.tests.append(TestRecord("SSLyze TLS Audit", tls_output, tuple(tls_findings)))
-            print(f"[+] SSLyze normalized {len(tls_findings)} TLS findings")
+            for finding in tls_findings:
+                report.send("finding", **finding_to_dict(finding))
+            report.stage("tls", "completed", f"SSLyze normalized {len(tls_findings)} TLS findings")
+            report.print(f"[+] SSLyze normalized {len(tls_findings)} TLS findings")
         except CyberSentinelError as exc:
             message = f"SSLyze failed for {service.host}:{service.port}: {exc}"
-            print(f"[!] {message}")
+            report.print(f"[!] {message}")
+            report.stage("tls", "failed", message)
+            report.send("error", message=message, stage="tls")
             summary.errors.append(message)
             summary.tests.append(
                 TestRecord("SSLyze TLS Audit", {"host": service.host, "port": service.port, "error": str(exc)})
             )
 
+    report.stage("harvest", "started", "Persisting normalized findings")
     findings_file = output_path / "findings.json"
     try:
-        def _finding_dict(f: RawFinding) -> dict[str, Any]:
-            return {
-                "source": f.source,
-                "title": f.title,
-                "severity": f.severity,
-                "scan_type": f.scan_type,
-                "endpoint_url": f.endpoint_url,
-                "cwe": f.cwe,
-                "description": f.description,
-                "mitigation": f.mitigation,
-                "payload": f.payload,
-                "evidence": f.evidence,
-                "metadata": f.metadata,
-            }
-
         findings_payload = {
             "target": target.url,
             "summary": {
@@ -154,18 +237,20 @@ def run_scan(
                 "passive_count": len(summary.passive_findings),
                 "total_count": len(summary.findings),
             },
-            "active_findings": [_finding_dict(f) for f in summary.active_findings],
-            "passive_findings": [_finding_dict(f) for f in summary.passive_findings],
+            "active_findings": [finding_to_dict(f) for f in summary.active_findings],
+            "passive_findings": [finding_to_dict(f) for f in summary.passive_findings],
         }
         with open(findings_file, "w", encoding="utf-8") as fh:
             json.dump(findings_payload, fh, indent=2)
-        print(
+        report.print(
             f"[+] Saved {len(summary.findings)} findings "
             f"({len(summary.active_findings)} active, {len(summary.passive_findings)} passive) "
             f"to {findings_file}"
         )
+        report.stage("harvest", "completed", f"{len(summary.findings)} finding(s) written to findings.json")
     except OSError as exc:
-        print(f"[!] Could not write {findings_file}: {exc}")
+        report.print(f"[!] Could not write {findings_file}: {exc}")
+        report.stage("harvest", "failed", f"Could not write {findings_file}: {exc}")
 
     if database_dsn:
         store = DefectDojoStore(database_dsn)
@@ -176,23 +261,22 @@ def run_scan(
             summary.engagement_id = persisted["engagement_id"]
             summary.persisted_findings = persisted["persisted_findings"]
             summary.duplicate_findings = persisted["duplicate_findings"]
-            print(
+            report.print(
                 f"[+] Persisted {summary.persisted_findings} findings "
                 f"({summary.duplicate_findings} duplicate) to engagement {summary.engagement_id}."
             )
         finally:
             store.close()
     else:
-        print("[*] PostgreSQL persistence skipped; provide --db-dsn or CYBERSENTINEL_DATABASE_URL.")
+        report.print("[*] PostgreSQL persistence skipped; provide --db-dsn or CYBERSENTINEL_DATABASE_URL.")
 
+    report.send("summary", target=target.url, status=summary.status, findings=[finding_to_dict(f) for f in summary.findings])
     return summary
 
 
 def _print_finding_group(title: str, findings: list[RawFinding]) -> None:
     if not findings:
         return
-    from collections import Counter
-
     counts = Counter(f.severity.upper() for f in findings)
     severity_order = ["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"]
     breakdown = [f"{s}: {counts[s]}" for s in severity_order if counts.get(s)]

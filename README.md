@@ -13,7 +13,7 @@ Modern web applications face sophisticated cyber threats ranging from Injection 
 
 **CyberSentinel** is an automated **Dynamic Application Security Testing (DAST) and Security Orchestration platform** built to bring automated vulnerability assessment into the modern DevSecOps lifecycle. 
 
-It programmatically provisions isolated vulnerable target environments, generates declarative **Scan-as-Code** plans, instructs an industrial-grade scanning engine ([OWASP ZAP](https://www.zaproxy.org/)), monitors real-time telemetry, and triages discovered vulnerabilities.
+It programmatically provisions isolated vulnerable target environments, generates declarative **Scan-as-Code** plans, instructs an industrial-grade scanning engine ([OWASP ZAP](https://www.zaproxy.org/)), monitors real-time telemetry, and triages discovered vulnerabilities into a **live findings dashboard** that tells an engineer what is broken, where, and how to fix it.
 
 ---
 
@@ -33,6 +33,8 @@ It programmatically provisions isolated vulnerable target environments, generate
 flowchart TD
     subgraph Host["💻 Host Machine (CyberSentinel Orchestrator)"]
         CLI["CLI / User Input\n(Target URL)"] --> PY["orchestrator.py\n(Python Engine)"]
+        UI["🖥 Findings Dashboard\nFastAPI + SSE (:5000)"] -->|URL + session cookie| PY
+        PY -->|Stage events, telemetry & findings| UI
         PY -->|Step 1: Write Scan-as-Code| YAML["scan_plan.yaml\n(ZAP Automation Plan)"]
         PY -->|Step 2: Trigger Plan via REST API| ZAP["OWASP ZAP Daemon\n(:8080)"]
         PY <-->|Step 3: Real-Time Telemetry Polling| ZAP
@@ -90,19 +92,48 @@ Why were these specific technologies chosen over industry alternatives?
   * Zero pollution of host system (no native Apache/PHP/MySQL dependencies).
   * Fast spin-up and teardown in seconds.
 
+### 5. Dashboard Delivery: FastAPI + Server-Sent Events
+
+* **Selected**: `FastAPI` + `Uvicorn` serving one HTML page and vanilla JS, with progress pushed over **Server-Sent Events**.
+* **Why**: The scan pipeline is a long-running, one-directional telemetry source — exactly what SSE models without extra machinery. A browser reconnects and replays missed events for free, and the backend stays in the same Python runtime as the orchestrator, so no scan logic is duplicated for the UI.
+* **Alternatives evaluated**:
+  * *WebSockets*: Bidirectional, but the dashboard only sends one command (start/stop) and receives a stream; SSE adds reconnect semantics without a protocol upgrade or connection-state code.
+  * *Client polling*: Simplest to implement, but re-polling every second multiplies request load and makes progress visibly jerky.
+  * *React / Next.js SPA*: Better for a large product surface, but introduces a Node build pipeline for a single operator screen.
+  * *Off-the-shelf (DefectDojo / Security Hub)*: Mature finding management, yet it hides the orchestration story this project exists to demonstrate; PostgreSQL persistence for the DefectDojo-style schema remains available through `storage.py`.
+
 ---
 
 ## 📂 Repository Structure
 
 ```text
 CyberSentinel/
-├── orchestrator.py         # Main Python engine (Plan Generator, API Driver, Telemetry, Harvester)
-├── scan_plan.yaml          # Declarative YAML scan configuration (Auto-generated & customizable)
+├── orchestrator.py         # Main pipeline: discovery -> ZAP -> SSLyze -> harvest (CLI entry point)
+├── web_dashboard.py        # FastAPI app: scan queue, SSE progress stream, findings API
+├── events.py               # In-memory scan jobs; thread-safe event fan-out to dashboard clients
+├── zap_client.py           # OWASP ZAP Automation Framework adapter + scan policy presets
+├── discovery.py            # Nmap service discovery and scanner routing
+├── targeting.py            # URL parsing, ZAP scope regex, authorization guardrails
+├── normalizer.py           # ZAP/SSLyze output -> common RawFinding contract (+ deduplication)
+├── models.py               # Typed dataclasses shared across the pipeline
+├── tls_audit.py            # SSLyze TLS audit
+├── storage.py / schema.sql # PostgreSQL product -> engagement -> test -> finding hierarchy
+├── exceptions.py           # Domain error hierarchy
+├── scan_plan.yaml          # Declarative YAML scan configuration (auto-generated & customizable)
+├── templates/dashboard.html # Server-rendered dashboard page
+├── static/dashboard.js     # Live progress + findings UI (no build step)
+├── static/dashboard.css    # Dashboard styling
+├── tests/                  # Unit tests for discovery, targeting, normalizer, orchestrator, dashboard
+├── requirements.txt
+├── DASHBOARD.md            # Module 2 deep-dive: request lifecycle, SSE protocol, viva question bank
 ├── README.md               # Complete platform documentation and architecture guide
 └── mutillidae/             # Dockerized Multi-Container Vulnerability Target Stack
     ├── docker-compose.yml  # Compose definition (Web, MySQL, OpenLDAP, phpMyAdmin, phpLDAPadmin)
     └── README.md           # Mutillidae-specific operations and port documentation
 ```
+
+Scan evidence is written per run to `scan_results/<scan_id>/` (`findings.json`,
+`scan_plan.yaml`); that directory is generated and git-ignored.
 
 ## Module 1 Implementation
 
@@ -116,6 +147,76 @@ The current implementation is an authorized, multi-stage pipeline:
 6. **PostgreSQL persistence**: every Nmap, ZAP, and SSLyze execution creates a `test` row within the required `product -> engagement -> test -> finding <-> endpoint_status -> endpoint` hierarchy. Repeated findings retain history and are marked with the required SHA-256 deduplication hash.
 
 The public Python entry point is `run_scan(target_url, ...)` in `orchestrator.py`. The CLI is intentionally thin so CI/CD integrations can call the same pipeline directly.
+
+---
+
+## 🖥️ Module 2 Implementation: Findings Dashboard
+
+Module 1 answered *"can we drive a DAST engine programmatically?"*. Module 2 answers the question a developer actually asks: *"what is broken, where, and how do I fix it?"*
+
+The dashboard is a FastAPI service that exposes the **exact same pipeline** as the CLI — no duplicated scan logic — and streams its telemetry to a browser while it runs.
+
+> 📘 **Full technical write-up:** [`DASHBOARD.md`](DASHBOARD.md) documents this module end to end — the request lifecycle, the thread→asyncio event bridge, the SSE frame protocol with wire captures, the findings data contract, session/cookie injection into ZAP, security guardrails, measured verification evidence, limitations, troubleshooting, and a viva question bank.
+
+### Operator flow
+
+1. Paste a target URL, for example `http://127.0.0.1:4280/vulnerabilities/csrf/?password_new=ss&password_conf=ss&Change=Change`.
+2. Paste the session cookie. Both `security=low; PHPSESSID=abc…` and a copied `Cookie: security=low; …` header are accepted — the prefix and any newlines are stripped before the value reaches the ZAP plan.
+3. Choose the vulnerability scope (`all`, `sqli`, `xss`, `csrf`). These map 1:1 to the `SCAN_POLICIES` presets in `zap_client.py`; `all` leaves ZAP's default policy in place.
+4. Press **Enter** (or click *Start scan*). Progress renders live; findings appear as the engine harvests them.
+
+### Live progress panel
+
+| Element | Source |
+|---|---|
+| Stage stepper (discovery → ZAP → TLS → harvest) | `stage` events emitted by `run_scan` |
+| Spider / active-scan percentage bars, elapsed clock | `progress` events from `ZAPClient.poll_plan` |
+| Discovered services | Nmap result of the discovery stage |
+| Crawled URLs | ZAP spider results, reported before fuzzing starts |
+| Engine log | The same lines the CLI prints on stdout |
+| Stop | Sets a cancellation flag that `poll_plan` checks each poll, then calls ZAP's `stopPlan` |
+
+### Findings dashboard
+
+Every finding is rendered with the fields a developer needs to act, produced by `finding_to_dict()` in `orchestrator.py`:
+
+**name · severity · affected URL · vulnerable parameter · evidence · confidence · recommended fix**, plus CWE, attack payload, scanner source, and reference links.
+
+Findings are filterable by severity chip, tabbed by **active exploit** vs **passive warning**, and searchable by name, URL, or parameter. Active findings (real exploitation) are deliberately separated from passive hygiene warnings so the exploitable issues are never buried under header findings.
+
+### HTTP API
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/` | Dashboard UI |
+| `GET` | `/api/health?zap_url=…` | Preflight: ZAP reachability + version, Nmap availability, active scan id |
+| `POST` | `/api/scans` | Queue a scan (`target_url`, `cookie`, `policy`, `zap_url`, `zap_timeout`, `authorized`) |
+| `GET` | `/api/scans/{id}/events` | Server-Sent Event stream for one scan |
+| `GET` | `/api/scans/{id}` | Snapshot: status, findings, and full event history |
+| `GET` | `/api/scans` | Recent scan summaries |
+| `POST` | `/api/scans/{id}/stop` | Request cancellation |
+
+Event types on the stream: `scan.queued`, `scan.started`, `stage`, `services`, `plan`, `progress`, `urls`, `finding`, `log`, `error`, `summary`, `scan.cancelling`, `scan.finished`.
+
+### Design decisions
+
+* **Threads publish, the event loop delivers.** The pipeline is synchronous and blocking, so each scan runs in a worker thread while SSE responses live on asyncio's loop. `events.py` crosses that boundary with `loop.call_soon_threadsafe`, which keeps the scan code free of any async concerns.
+* **Refresh-safe.** Every event is appended to the job's history, so reloading the page re-attaches to the in-flight scan and rebuilds the panel from the replay instead of losing it.
+* **Preflight beats a hang.** A missing ZAP daemon is reported by `/api/health` before a scan is queued; the ZAP base URL is editable in the UI (and via `CYBERSENTINEL_ZAP_URL`) because a desktop ZAP install rarely listens on `8080` by default.
+* **One scan at a time.** A single ZAP daemon is a shared, stateful resource, so a second `POST /api/scans` returns `409` rather than interleaving two plans.
+* **The session cookie is write-only.** It reaches the ZAP plan but is never echoed back — API responses expose only `cookie_provided: true`.
+* **Duplicates collapse once, in the normalizer.** ZAP re-reports byte-identical alerts when the spider revisits a URL with reordered parameters, so `normalize_zap_alerts()` deduplicates them. The terminal summary, `findings.json`, and the dashboard counts therefore always agree.
+* **Bind to loopback.** The dashboard has no authentication and can launch scans; run it on `127.0.0.1` against systems you are authorised to test.
+
+### Artifacts
+
+Each scan writes to its own directory so evidence is never overwritten:
+
+```text
+scan_results/<scan_id>/
+├── findings.json    # normalized active + passive findings
+└── scan_plan.yaml   # the exact ZAP Automation Framework plan that ran
+```
 
 ---
 
@@ -134,6 +235,8 @@ Install Python dependencies from the repository root:
 ```bash
 python3 -m pip install -r requirements.txt
 ```
+
+`requirements.txt` also installs `fastapi` and `uvicorn` for the Module 2 dashboard. The UI itself is plain HTML/CSS/JS with no Node build step.
 
 For PostgreSQL persistence, supply a normal PostgreSQL DSN through `--db-dsn` or the `CYBERSENTINEL_DATABASE_URL` environment variable. Initialize the six-table schema once with:
 
@@ -228,6 +331,31 @@ ZAP API Response: {'planId': 0}
 
 ---
 
+### Step 4: Launch the Findings Dashboard
+
+The dashboard reuses the Module 1 pipeline, so the ZAP daemon and Nmap from the
+prerequisites must already be available.
+
+```bash
+# From the repository root
+python -m uvicorn web_dashboard:app --host 127.0.0.1 --port 5000
+```
+
+Open <http://127.0.0.1:5000>, paste the target URL and session cookie, pick a
+vulnerability scope, and press **Enter**.
+
+If ZAP's API is not on `http://127.0.0.1:8080`, set it once for the process or
+per scan from the UI:
+
+```bash
+CYBERSENTINEL_ZAP_URL="http://127.0.0.1:8090" python -m uvicorn web_dashboard:app --host 127.0.0.1 --port 5000
+```
+
+The **ZAP daemon** chip in the header reflects `/api/health`, so an unreachable
+engine is visible before a scan is queued rather than failing mid-run.
+
+---
+
 ## 🎤 Panel Pitch & Presentation Guide
 
 When showcasing CyberSentinel to evaluation committees, professors, or industry panels, use this structured pitch script:
@@ -254,7 +382,7 @@ To transition CyberSentinel into an enterprise-ready security product, the follo
 
 ```mermaid
 graph LR
-    P[Current Prototype\n• Python Orchestrator\n• ZAP REST API\n• Docker Testbeds\n• Risk Triage] --> F1[1. AI Remediation Engine\n• LLM Context Analysis\n• Auto PR Code Patches\n• False Positive Filter]
+    P[Current Prototype\n• Python Orchestrator\n• ZAP REST API\n• Docker Testbeds\n• Live SSE Findings Dashboard\n• Risk Triage] --> F1[1. AI Remediation Engine\n• LLM Context Analysis\n• Auto PR Code Patches\n• False Positive Filter]
     P --> F2[2. CI/CD DevSecOps Gate\n• GitHub Actions / GitLab CI\n• Quality Gates\n• Block Insecure Builds]
     P --> F3[3. Enterprise Integrations\n• Auto Jira / Slack Tickets\n• CVSS 3.1 Scoring\n• Audit Compliance Reports]
 ```
@@ -282,8 +410,9 @@ graph LR
 * **Reporting**: 1-click generation of audit-ready executive PDF and developer-friendly Markdown/SARIF reports.
 
 ### 5. 🔐 Authenticated Crawling & API-First Scanning
-* Implement session state handling (OAuth2, JWT, Session Cookies, and Selenium-driven browser replay) to automatically scan authenticated portals behind multi-factor login workflows.
-* Support scanning OpenAPI / Swagger JSON specs directly to audit backend microservices and headless APIs.
+* **In place**: pre-authenticated **session cookie** handling — the dashboard injects the operator's cookie into every spider and active-scan request and excludes logout paths from the crawl so the session survives the scan.
+* **Next**: OAuth2 / JWT flows and Selenium-driven browser replay to reach portals behind multi-factor login.
+* **Next**: Support scanning OpenAPI / Swagger JSON specs directly to audit backend microservices and headless APIs.
 
 ---
 

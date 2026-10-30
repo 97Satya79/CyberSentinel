@@ -7,6 +7,10 @@ services:
     command: zap.sh -daemon -host 0.0.0.0 -port 8080 -config api.disablekey=true -config api.addrs.addr.name=.* -config api.addrs.addr.regex=true
     ports:
       - "8080:8080"
+    volumes:
+      - scan-data:/app/scan_results
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   # Service 2: CyberSentinel Findings Dashboard
   dashboard:
@@ -19,4 +23,10 @@ services:
       - "5000:5000"
     depends_on:
       - zap
+    volumes:
+      - scan-data:/app/scan_results
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
+volumes:
+  scan-data:

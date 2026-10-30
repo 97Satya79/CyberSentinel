@@ -13,6 +13,7 @@ import shutil
 import threading
 from pathlib import Path
 from typing import Any, AsyncIterator
+from urllib.parse import urlsplit, urlunsplit
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
@@ -59,6 +60,23 @@ def normalize_cookie(value: str | None) -> str | None:
     if any(ord(character) < 32 or ord(character) == 127 for character in cleaned):
         raise HTTPException(status_code=422, detail="Cookie must not contain control characters.")
     return cleaned or None
+
+
+def _normalize_target_url(raw_url: str) -> str:
+    """Rewrite localhost/127.0.0.1 to host.docker.internal when running in Docker."""
+    is_docker = Path("/.dockerenv").exists() or "zap" in DEFAULT_ZAP_URL
+    if not is_docker:
+        return raw_url
+    try:
+        parsed = urlsplit(raw_url)
+        host = (parsed.hostname or "").lower()
+        if host in {"localhost", "127.0.0.1", "::1"}:
+            port_part = f":{parsed.port}" if parsed.port else ""
+            netloc = f"host.docker.internal{port_part}"
+            return urlunsplit((parsed.scheme, netloc, parsed.path, parsed.query, parsed.fragment))
+    except Exception:
+        pass
+    return raw_url
 
 
 def _worker(job: ScanJob) -> None:
@@ -144,7 +162,7 @@ async def start_scan(payload: ScanRequest) -> JSONResponse:
     if payload.policy not in POLICY_CHOICES:
         raise HTTPException(status_code=422, detail=f"Unknown policy {payload.policy!r}.")
     try:
-        target = parse_target(payload.target_url)
+        target = parse_target(_normalize_target_url(payload.target_url))
         require_authorized_target(target, payload.authorized)
     except CyberSentinelError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

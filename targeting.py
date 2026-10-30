@@ -52,7 +52,7 @@ def is_local_target(target: Target) -> bool:
     """Return true for loopback/local targets that are safe development defaults."""
 
     host = target.host.lower()
-    if host == "localhost" or host.endswith(".localhost"):
+    if host in {"localhost", "host.docker.internal"} or host.endswith(".localhost"):
         return True
     try:
         address = ipaddress.ip_address(host)

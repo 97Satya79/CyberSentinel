@@ -118,7 +118,7 @@ def _result(summary: Any) -> dict[str, Any]:
 
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request) -> HTMLResponse:
-    return templates.TemplateResponse(request, "dashboard.html")
+    return templates.TemplateResponse(request, "dashboard.html", {"default_zap_url": DEFAULT_ZAP_URL})
 
 
 @app.get("/api/health")

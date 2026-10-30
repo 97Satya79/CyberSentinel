@@ -45,7 +45,7 @@
         </div>
         <div class="field">
           <label for="zap-url">ZAP API</label>
-          <input id="zap-url" name="zap_url" type="text" class="mono-input" value="http://127.0.0.1:8080" spellcheck="false">
+          <input id="zap-url" name="zap_url" type="text" class="mono-input" value="{{ default_zap_url or 'http://127.0.0.1:8080' }}" spellcheck="false">
         </div>
         <div class="field">
           <label for="zap-timeout">Engine timeout (s)</label>

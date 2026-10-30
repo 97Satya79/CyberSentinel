@@ -1,0 +1,22 @@
+services:
+  # Service 1: OWASP ZAP Security Scanner Engine
+  zap:
+    image: zaproxy/zap-stable
+    container_name: cybersentinel-zap
+    restart: unless-stopped
+    command: zap.sh -daemon -host 0.0.0.0 -port 8080 -config api.disablekey=true -config api.addrs.addr.name=.* -config api.addrs.addr.regex=true
+    ports:
+      - "8080:8080"
+
+  # Service 2: CyberSentinel Findings Dashboard
+  dashboard:
+    build: .
+    container_name: cybersentinel-dashboard
+    restart: unless-stopped
+    environment:
+      - CYBERSENTINEL_ZAP_URL=http://zap:8080
+    ports:
+      - "5000:5000"
+    depends_on:
+      - zap
+

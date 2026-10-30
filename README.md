@@ -220,7 +220,24 @@ scan_results/<scan_id>/
 
 ---
 
-## 🚀 Getting Started & Setup Guide
+## 🚀 Quick Start (Run with Docker Compose)
+
+The fastest and most reliable way to run CyberSentinel and the OWASP ZAP engine together:
+
+```bash
+# 1. Clone the repository
+git clone https://github.com/97Satya79/CyberSentinel.git
+cd CyberSentinel
+
+# 2. Start the entire platform (ZAP Engine + Findings Dashboard)
+docker compose up
+```
+
+Once started, open your browser at **[http://localhost:5000](http://localhost:5000)**.
+
+---
+
+## 🛠️ Manual / Local Development Setup
 
 ### Prerequisites
 - **macOS / Linux / Windows (WSL2)**

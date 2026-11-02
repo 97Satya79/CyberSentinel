@@ -44,7 +44,6 @@ flowchart TD
     subgraph Docker["🐳 Docker Sandbox (Target Environments)"]
         ZAP -->|Crawling & Spidering| TARGET["Target Application"]
         ZAP -->|Active Attack Payloads| TARGET
-        TARGET --- M["Mutillidae II Stack\n(PHP, MySQL, LDAP)\n:8081, :8082, :8083"]
         TARGET --- D["DVWA Stack\n:9090"]
     end
 ```
@@ -86,7 +85,7 @@ Why were these specific technologies chosen over industry alternatives?
 * **Why**: Follows the modern GitOps and DevSecOps paradigm. Security scans are treated like code—version-controlled, auditable, and easily editable without modifying the Python orchestrator script.
 
 ### 4. Sandboxed Target Environments: Docker & Docker Compose
-* **Selected**: Multi-container Docker stacks for **OWASP Mutillidae II** and **DVWA**.
+* **Selected**: Multi-container Docker stacks for **DVWA** (Damn Vulnerable Web Application).
 * **Why**:
   * Provides isolated, repeatable, and safe testing ground for high-risk exploits (SQL Injection, LDAP Injection, XSS) without legal or ethical risks.
   * Zero pollution of host system (no native Apache/PHP/MySQL dependencies).
@@ -126,9 +125,6 @@ CyberSentinel/
 ├── requirements.txt
 ├── DASHBOARD.md            # Module 2 deep-dive: request lifecycle, SSE protocol, viva question bank
 ├── README.md               # Complete platform documentation and architecture guide
-└── mutillidae/             # Dockerized Multi-Container Vulnerability Target Stack
-    ├── docker-compose.yml  # Compose definition (Web, MySQL, OpenLDAP, phpMyAdmin, phpLDAPadmin)
-    └── README.md           # Mutillidae-specific operations and port documentation
 ```
 
 Scan evidence is written per run to `scan_results/<scan_id>/` (`findings.json`,
@@ -255,28 +251,14 @@ python3 -m pip install -r requirements.txt
 
 ---
 
-### Step 1: Start the Target Environment (Mutillidae II)
+### Step 1: Start Your Target Environment (DVWA)
 
-Spin up the containerized target stack:
+Start your local vulnerable test application (e.g. Damn Vulnerable Web Application - DVWA on port 9090 or 4280):
 
 ```bash
-cd mutillidae
-docker compose up -d
+# Example running DVWA via Docker
+docker run -d -p 9090:80 vulnerables/web-dvwa
 ```
-
-Verify containers are running:
-```bash
-docker ps
-```
-
-| Service | Local URL | Description |
-|---|---|---|
-| **Mutillidae II Web App** | [http://127.0.0.1:8081](http://127.0.0.1:8081) | Primary target application |
-| **Database Setup** | [http://127.0.0.1:8081/set-up-database.php](http://127.0.0.1:8081/set-up-database.php) | One-click database table initializer |
-| **phpMyAdmin** | [http://127.0.0.1:8082](http://127.0.0.1:8082) | MySQL Database Web GUI |
-| **phpLDAPadmin** | [http://127.0.0.1:8083](http://127.0.0.1:8083) | LDAP Directory Web GUI |
-
-*(Note: On first start, visit `http://127.0.0.1:8081/set-up-database.php` to initialize the database tables).*
 
 ---
 
@@ -298,7 +280,7 @@ Start ZAP with API access enabled on port `8080`:
 
 ### Step 3: Run CyberSentinel Orchestrator
 
-Execute the scanner against your desired target (e.g., local Mutillidae, DVWA, or an authorized testbed):
+Execute the scanner against your desired target (e.g., DVWA or an authorized target):
 
 ```bash
 # Scan the local SentinelVault endpoint and persist every scanner output.
@@ -372,7 +354,7 @@ When showcasing CyberSentinel to evaluation committees, professors, or industry 
 
 ### 2. The Prototype Demo (90 Seconds)
 > *"What we have built today is a working prototype demonstrating automated security orchestration:*
-> 1. *We use Docker to instantly spin up isolated multi-tier vulnerable enterprise environments (OWASP Mutillidae II).*
+> 1. *We use Docker to instantly spin up isolated multi-tier vulnerable enterprise environments (such as DVWA).*
 > 2. *Our Python orchestrator generates a declarative Scan-as-Code specification on the fly.*
 > 3. *It interfaces with OWASP ZAP's Automation Framework daemon through asynchronous REST APIs.*
 > 4. *It streams real-time telemetry (spider crawling and active attack completion).*
@@ -434,5 +416,4 @@ graph LR
 * **Author**: Adithya Pawar
 * **Frameworks & References**:
   * [OWASP ZAP Project](https://www.zaproxy.org/)
-  * [OWASP Mutillidae II Project](https://github.com/webpwnized/mutillidae)
   * [Damn Vulnerable Web Application (DVWA)](https://github.com/digininja/DVWA)

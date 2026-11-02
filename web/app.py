@@ -21,20 +21,21 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
 
-from events import ScanJob, ScanRegistry
-from exceptions import CyberSentinelError
-from orchestrator import run_scan
-from targeting import parse_target, require_authorized_target
-from zap_client import SCAN_POLICIES, ZAPClient
+from core.events import ScanJob, ScanRegistry
+from core.exceptions import CyberSentinelError
+from core.orchestrator import run_scan
+from core.targeting import parse_target, require_authorized_target
+from core.zap_client import SCAN_POLICIES, ZAPClient
 
-BASE_DIR = Path(__file__).resolve().parent
-RESULTS_DIR = BASE_DIR / "scan_results"
+APP_DIR = Path(__file__).resolve().parent
+ROOT_DIR = APP_DIR.parent
+RESULTS_DIR = ROOT_DIR / "scan_results"
 POLICY_CHOICES = {"all", *SCAN_POLICIES.keys()}
 DEFAULT_ZAP_URL = os.environ.get("CYBERSENTINEL_ZAP_URL", "http://127.0.0.1:8080")
 
 app = FastAPI(title="CyberSentinel Dashboard", version="1.0")
-app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
-templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+app.mount("/static", StaticFiles(directory=APP_DIR / "static"), name="static")
+templates = Jinja2Templates(directory=str(APP_DIR / "templates"))
 registry = ScanRegistry()
 
 

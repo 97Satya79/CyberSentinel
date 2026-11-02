@@ -1,7 +1,7 @@
 import unittest
 
-from discovery import discover_services, route_services
-from targeting import parse_target
+from core.discovery import discover_services, route_services
+from core.targeting import parse_target
 
 
 class FakeHost(dict):

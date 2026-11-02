@@ -1,7 +1,7 @@
 import unittest
 
-from models import DiscoveredService
-from normalizer import normalize_sslyze_report, normalize_zap_alerts
+from core.models import DiscoveredService
+from core.normalizer import normalize_sslyze_report, normalize_zap_alerts
 
 
 class NormalizerTests(unittest.TestCase):

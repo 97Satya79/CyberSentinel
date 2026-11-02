@@ -11,13 +11,13 @@ from collections import Counter
 from pathlib import Path
 from typing import Any, Callable
 
-from discovery import discover_services, route_services
-from exceptions import CyberSentinelError
-from models import RawFinding, ScanSummary, TestRecord
-from normalizer import normalize_zap_alerts
-from targeting import display_target, parse_target, require_authorized_target
-from tls_audit import run_tls_audit
-from zap_client import (
+from .discovery import discover_services, route_services
+from .exceptions import CyberSentinelError
+from .models import RawFinding, ScanSummary, TestRecord
+from .normalizer import normalize_zap_alerts
+from .targeting import display_target, parse_target, require_authorized_target
+from .tls_audit import run_tls_audit
+from .zap_client import (
     SCAN_POLICIES,
     ZAPClient,
     generate_yaml_plan,

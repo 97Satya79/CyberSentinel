@@ -6,7 +6,7 @@ import json
 from datetime import datetime, timezone
 from typing import Any, Mapping
 
-from models import DiscoveredService, RawFinding
+from .models import DiscoveredService, RawFinding
 
 
 SEVERITIES = {"Critical", "High", "Medium", "Low", "Info"}

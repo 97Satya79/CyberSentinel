@@ -6,8 +6,8 @@ import ipaddress
 import re
 from urllib.parse import urlsplit, urlunsplit
 
-from exceptions import TargetAuthorizationError, TargetValidationError
-from models import Target
+from .exceptions import TargetAuthorizationError, TargetValidationError
+from .models import Target
 
 
 def parse_target(value: str) -> Target:

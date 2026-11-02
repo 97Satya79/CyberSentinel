@@ -2,9 +2,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from exceptions import TargetAuthorizationError
-from targeting import parse_target, require_authorized_target, zap_scope_regex
-from zap_client import write_zap_plan
+from core.exceptions import TargetAuthorizationError
+from core.targeting import parse_target, require_authorized_target, zap_scope_regex
+from core.zap_client import write_zap_plan
 
 
 class TargetingTests(unittest.TestCase):

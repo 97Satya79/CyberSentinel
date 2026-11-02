@@ -3,8 +3,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-import orchestrator
-from models import DiscoveredService
+from core import orchestrator
+from core.models import DiscoveredService
 
 
 class OrchestratorTests(unittest.TestCase):

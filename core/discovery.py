@@ -5,8 +5,8 @@ from __future__ import annotations
 import json
 from typing import Any, Callable
 
-from exceptions import ScanExecutionError, ToolUnavailableError
-from models import DiscoveredService, ServiceRoutes, Target
+from .exceptions import ScanExecutionError, ToolUnavailableError
+from .models import DiscoveredService, ServiceRoutes, Target
 
 
 DEFAULT_WEB_PORTS = (80, 443, 3000, 5000, 5050, 8000, 8008, 8080, 8081, 8443, 8888, 9000, 9090, 9443)

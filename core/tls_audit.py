@@ -10,9 +10,9 @@ import tempfile
 from pathlib import Path
 from typing import Any, Callable
 
-from exceptions import ScanExecutionError
-from models import DiscoveredService, RawFinding, Target
-from normalizer import normalize_sslyze_report
+from .exceptions import ScanExecutionError
+from .models import DiscoveredService, RawFinding, Target
+from .normalizer import normalize_sslyze_report
 
 
 def run_tls_audit(

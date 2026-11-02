@@ -1,10 +1,10 @@
 import unittest
 
-from events import ScanJob, ScanRegistry
+from core.events import ScanJob, ScanRegistry
 from fastapi import HTTPException
-from normalizer import normalize_zap_alerts
-from orchestrator import finding_to_dict
-from web_dashboard import normalize_cookie
+from core.normalizer import normalize_zap_alerts
+from core.orchestrator import finding_to_dict
+from web.app import normalize_cookie
 
 SQLI_ALERT = {
     "alert": "SQL Injection - MySQL",

@@ -24,4 +24,4 @@ COPY . /app
 EXPOSE 5000
 
 # 8. Run the FastAPI app using Uvicorn
-CMD ["uvicorn", "web_dashboard:app", "--host", "0.0.0.0", "--port", "5000"]
+CMD ["uvicorn", "web.app:app", "--host", "0.0.0.0", "--port", "5000"]

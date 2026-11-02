@@ -10,10 +10,10 @@ from typing import Any, Callable
 
 import requests
 
-from exceptions import ScanExecutionError
-from models import Target
-from normalizer import normalize_zap_alerts
-from targeting import parse_target, zap_scope_regex
+from .exceptions import ScanExecutionError
+from .models import Target
+from .normalizer import normalize_zap_alerts
+from .targeting import parse_target, zap_scope_regex
 
 # ---------------------------------------------------------------------------
 # Scan policy presets

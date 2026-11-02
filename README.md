@@ -100,7 +100,7 @@ Why were these specific technologies chosen over industry alternatives?
   * *WebSockets*: Bidirectional, but the dashboard only sends one command (start/stop) and receives a stream; SSE adds reconnect semantics without a protocol upgrade or connection-state code.
   * *Client polling*: Simplest to implement, but re-polling every second multiplies request load and makes progress visibly jerky.
   * *React / Next.js SPA*: Better for a large product surface, but introduces a Node build pipeline for a single operator screen.
-  * *Off-the-shelf (DefectDojo / Security Hub)*: Mature finding management, yet it hides the orchestration story this project exists to demonstrate; PostgreSQL persistence for the DefectDojo-style schema remains available through `storage.py`.
+  * *Off-the-shelf (DefectDojo / Security Hub)*: Mature finding management, yet it hides the orchestration story this project exists to demonstrate; CyberSentinel focuses on direct DAST telemetry and standalone JSON artifacts.
 
 ---
 
@@ -117,7 +117,6 @@ CyberSentinel/
 ├── normalizer.py           # ZAP/SSLyze output -> common RawFinding contract (+ deduplication)
 ├── models.py               # Typed dataclasses shared across the pipeline
 ├── tls_audit.py            # SSLyze TLS audit
-├── storage.py / schema.sql # PostgreSQL product -> engagement -> test -> finding hierarchy
 ├── exceptions.py           # Domain error hierarchy
 ├── scan_plan.yaml          # Declarative YAML scan configuration (auto-generated & customizable)
 ├── templates/dashboard.html # Server-rendered dashboard page
@@ -144,7 +143,7 @@ The current implementation is an authorized, multi-stage pipeline:
 3. **Service router**: only discovered web services enter ZAP. HTTPS/TLS services also enter SSLyze.
 4. **ZAP active scan**: the Automation Framework plan is generated with an absolute path, polled using plan/spider/active telemetry, and stopped if it exceeds its timeout.
 5. **SSLyze TLS audit**: SSLyze writes JSON output which is retained with the scan record. Deprecated SSL/TLS versions, weak ciphers, and expired certificates are normalized when present.
-6. **PostgreSQL persistence**: every Nmap, ZAP, and SSLyze execution creates a `test` row within the required `product -> engagement -> test -> finding <-> endpoint_status -> endpoint` hierarchy. Repeated findings retain history and are marked with the required SHA-256 deduplication hash.
+6. **Report artifact harvesting**: every Nmap, ZAP, and SSLyze execution normalizes findings, deduplicates repeated alerts, and saves structured JSON reports directly to disk (`scan_results/`).
 
 The public Python entry point is `run_scan(target_url, ...)` in `orchestrator.py`. The CLI is intentionally thin so CI/CD integrations can call the same pipeline directly.
 
@@ -245,7 +244,6 @@ Once started, open your browser at **[http://localhost:5000](http://localhost:50
 - **Python 3.10+** with the project dependencies installed
 - **Nmap** installed and available on `PATH`
 - **OWASP ZAP** installed (Desktop GUI or Headless Docker Daemon)
-- **PostgreSQL 14+** for persistent engagements, tests, findings, and endpoints
 
 Install Python dependencies from the repository root:
 
@@ -254,12 +252,6 @@ python3 -m pip install -r requirements.txt
 ```
 
 `requirements.txt` also installs `fastapi` and `uvicorn` for the Module 2 dashboard. The UI itself is plain HTML/CSS/JS with no Node build step.
-
-For PostgreSQL persistence, supply a normal PostgreSQL DSN through `--db-dsn` or the `CYBERSENTINEL_DATABASE_URL` environment variable. Initialize the six-table schema once with:
-
-```bash
-python3 orchestrator.py --init-db --db-dsn "postgresql://USER:PASSWORD@127.0.0.1:5432/cybersentinel"
-```
 
 ---
 
@@ -310,18 +302,16 @@ Execute the scanner against your desired target (e.g., local Mutillidae, DVWA, o
 
 ```bash
 # Scan the local SentinelVault endpoint and persist every scanner output.
-python3 orchestrator.py "http://127.0.0.1:5050/vulnerabilities/sqli/" \
-  --db-dsn "postgresql://USER:PASSWORD@127.0.0.1:5432/cybersentinel"
+python3 orchestrator.py "http://127.0.0.1:5050/vulnerabilities/sqli/"
 
 # Scan local Mutillidae over HTTP.
-python3 orchestrator.py "http://127.0.0.1:8081/" \
-  --db-dsn "postgresql://USER:PASSWORD@127.0.0.1:5432/cybersentinel"
+python3 orchestrator.py "http://127.0.0.1:8081/"
 ```
 
 For a non-local system, explicit authorization is required in addition to the URL:
 
 ```bash
-python3 orchestrator.py "https://authorized.example/" --authorized --db-dsn "$CYBERSENTINEL_DATABASE_URL"
+python3 orchestrator.py "https://authorized.example/" --authorized
 ```
 
 Use `python3 orchestrator.py --help` for timeout, output directory, product name, and ZAP daemon options.

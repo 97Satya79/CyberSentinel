@@ -15,7 +15,6 @@ from discovery import discover_services, route_services
 from exceptions import CyberSentinelError
 from models import RawFinding, ScanSummary, TestRecord
 from normalizer import normalize_zap_alerts
-from storage import DefectDojoStore
 from targeting import display_target, parse_target, require_authorized_target
 from tls_audit import run_tls_audit
 from zap_client import (
@@ -87,7 +86,6 @@ def run_scan(
     *,
     product_name: str | None = None,
     zap_base_url: str = "http://127.0.0.1:8080",
-    database_dsn: str | None = None,
     authorized: bool = False,
     output_directory: str | Path | None = None,
     zap_timeout: int = 360,
@@ -252,23 +250,6 @@ def run_scan(
         report.print(f"[!] Could not write {findings_file}: {exc}")
         report.stage("harvest", "failed", f"Could not write {findings_file}: {exc}")
 
-    if database_dsn:
-        store = DefectDojoStore(database_dsn)
-        try:
-            store.ensure_schema()
-            persisted = store.persist_scan(product_name or target.host, target, summary.tests)
-            summary.product_id = persisted["product_id"]
-            summary.engagement_id = persisted["engagement_id"]
-            summary.persisted_findings = persisted["persisted_findings"]
-            summary.duplicate_findings = persisted["duplicate_findings"]
-            report.print(
-                f"[+] Persisted {summary.persisted_findings} findings "
-                f"({summary.duplicate_findings} duplicate) to engagement {summary.engagement_id}."
-            )
-        finally:
-            store.close()
-    else:
-        report.print("[*] PostgreSQL persistence skipped; provide --db-dsn or CYBERSENTINEL_DATABASE_URL.")
 
     report.send("summary", target=target.url, status=summary.status, findings=[finding_to_dict(f) for f in summary.findings])
     return summary
@@ -328,17 +309,10 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Attest that you own or have permission to scan a non-local target.",
     )
-    parser.add_argument("--product-name", help="DefectDojo product name (defaults to target host)")
     parser.add_argument("--zap-url", default="http://127.0.0.1:8080", help="ZAP daemon base URL")
-    parser.add_argument(
-        "--db-dsn",
-        default=os.environ.get("CYBERSENTINEL_DATABASE_URL"),
-        help="PostgreSQL DSN; defaults to CYBERSENTINEL_DATABASE_URL",
-    )
     parser.add_argument("--output-dir", default=Path(__file__).resolve().parent, help="Directory for generated ZAP plans")
     parser.add_argument("--zap-timeout", type=int, default=360, help="ZAP timeout in seconds")
     parser.add_argument("--zap-poll-interval", type=int, default=5, help="ZAP telemetry interval in seconds")
-    parser.add_argument("--init-db", action="store_true", help="Create or validate the PostgreSQL schema, then exit")
     parser.add_argument(
         "--cookie",
         default=None,
@@ -364,27 +338,15 @@ def _build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
-    if args.init_db:
-        if not args.db_dsn:
-            parser.error("--init-db requires --db-dsn or CYBERSENTINEL_DATABASE_URL")
-        store = DefectDojoStore(args.db_dsn)
-        try:
-            store.ensure_schema()
-        finally:
-            store.close()
-        print("[+] PostgreSQL schema is ready.")
-        return 0
     if not args.target:
-        parser.error("target is required unless --init-db is used")
+        parser.error("target is required")
     if args.zap_timeout < 1 or args.zap_poll_interval < 1:
         parser.error("ZAP timeout and poll interval must be positive integers")
 
     try:
         summary = run_scan(
             args.target,
-            product_name=args.product_name,
             zap_base_url=args.zap_url,
-            database_dsn=args.db_dsn,
             authorized=args.authorized,
             output_directory=args.output_dir,
             zap_timeout=args.zap_timeout,
